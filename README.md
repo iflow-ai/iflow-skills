@@ -11,6 +11,7 @@ Skills are folders of instructions, scripts, and resources that AI agents load d
 | Skill | Description |
 |-------|-------------|
 | [iflow-nb](skills/iflow-nb/) | Knowledge base management, file import, content generation (PDF/PPT/podcast/mind map/video), web search & deep research, semantic search |
+| [iflow-search](skills/iflow-search/) | Web search, image search, and web page content fetching for AI agents |
 
 ## Quick Start
 
@@ -57,14 +58,17 @@ iflow-skill/
 ├── README.md
 ├── LICENSE
 └── skills/
-    └── iflow-nb/           # Knowledge base skill
+    ├── iflow-nb/            # Knowledge base skill
+    │   ├── SKILL.md         # Skill entry point
+    │   ├── knowledge-base/  # KB & file management APIs
+    │   ├── reports/         # Content generation APIs
+    │   ├── search/          # Web search APIs
+    │   ├── scripts/         # Pipeline scripts (Python)
+    │   ├── examples/        # Usage examples
+    │   └── references/      # Full API reference
+    └── iflow-search/        # Web search skill
         ├── SKILL.md         # Skill entry point
-        ├── knowledge-base/  # KB & file management APIs
-        ├── reports/         # Content generation APIs
-        ├── search/          # Web search APIs
-        ├── scripts/         # Pipeline scripts (Python)
-        ├── examples/        # Usage examples
-        └── references/      # Full API reference
+        └── scripts/         # Search scripts (Bash)
 ```
 
 ## Contributing
