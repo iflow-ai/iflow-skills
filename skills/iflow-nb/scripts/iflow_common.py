@@ -317,16 +317,14 @@ def poll_search(collection_id, search_id, max_wait=60, interval=3):
 
 
 def stop_search(collection_id):
-    """停止搜索"""
-    resp = api_post("/api/v1/knowledge/stopSearch",
-                    {"notebookId": collection_id})
+    """停止搜索（参数通过 query string 传递）"""
+    resp = api_post(f"/api/v1/knowledge/stopSearch?notebookId={collection_id}")
     return resp.get("success", False)
 
 
 def delete_search(collection_id):
-    """删除搜索"""
-    resp = api_post("/api/v1/knowledge/deleteSearch",
-                    {"notebookId": collection_id})
+    """删除搜索（参数通过 query string 传递）"""
+    resp = api_post(f"/api/v1/knowledge/deleteSearch?notebookId={collection_id}")
     return resp.get("success", False)
 
 

@@ -139,11 +139,13 @@
 
 `POST /api/v1/knowledge/clearCollection`
 
-请求参数（JSON Body）:
+请求参数（Query String）:
 
-| 字段 | 类型 | 必填 | 说明 |
+| 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | `collectionId` | string | 是 | 知识库 ID |
+
+示例: `POST /api/v1/knowledge/clearCollection?collectionId=xxx`
 
 返回: `{"success": true, "code": "200", "data": false}`
 
@@ -619,13 +621,13 @@ Content-Type: `application/json`
 
 **POST** `/api/v1/knowledge/stopSearch`
 
-Content-Type: `application/json`
-
-**请求体：**
+**请求参数（Query String）：**
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | `notebookId` | string | 是 | 知识库 ID |
+
+示例: `POST /api/v1/knowledge/stopSearch?notebookId=xxx`
 
 **响应：**
 
@@ -643,13 +645,13 @@ Content-Type: `application/json`
 
 **POST** `/api/v1/knowledge/deleteSearch`
 
-Content-Type: `application/json`
-
-**请求体：**
+**请求参数（Query String）：**
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | `notebookId` | string | 是 | 知识库 ID |
+
+示例: `POST /api/v1/knowledge/deleteSearch?notebookId=xxx`
 
 **响应：**
 
