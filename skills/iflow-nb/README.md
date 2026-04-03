@@ -30,7 +30,7 @@ This skill follows the open [Agent Skills](https://agentskills.io) standard and 
 
 ### 1. Get an API Key
 
-Visit [platform.iflow.cn](https://platform.iflow.cn/profile?tab=apiKey) to create your API key.
+Visit [iflow.cn](https://iflow.cn/?open=api-key) to create your API key.
 
 ### 2. Configure Credentials
 
@@ -38,7 +38,7 @@ Choose one of the following methods:
 
 ```bash
 # Option A - Config file (recommended)
-mkdir -p ~/.config/iflow-nb && echo "your_api_key" > ~/.config/iflow-nb/api_key
+mkdir -p ~/.config/iflow-nb && echo "your_api_key" > ~/.config/iflow-nb/api-key
 
 # Option B - Environment variable
 export IFLOW_API_KEY="your_api_key"
