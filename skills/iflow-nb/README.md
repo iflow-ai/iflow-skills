@@ -7,10 +7,12 @@ An [Agent Skills](https://agentskills.io) compatible skill for managing [iflow](
 - **Knowledge Base Management** - Create, list, update, delete, and share notebooks
 - **File Import** - Upload local files (PDF, DOCX, TXT, Markdown, images) and import web URLs
 - **Content Generation** - Generate reports (PDF/DOCX/Markdown), PPTs, podcasts, mind maps, and videos from your knowledge base
+- **Generation Progress** - Check the status of generation tasks
 - **Web Search & Import** - Search the web or academic papers (arXiv, etc.), auto-import results, and generate summaries
 - **Deep Research** - Multi-round web search with comprehensive research report generation
 - **Semantic Search** - Deep content retrieval across your knowledge base
-- **File Management** - List, rename, delete, and batch-manage files in notebooks
+- **File Management** - List, rename, delete, batch-delete, view details, and retry failed files in notebooks
+- **Sharing** - Generate read-only share links for notebooks
 
 ## Compatibility
 
@@ -58,13 +60,17 @@ iflow-nb/
 ├── search/
 │   └── SKILL.md              # Web search APIs
 ├── scripts/
-│   ├── iflow_common.py       # Shared utilities (auth, API helpers)
+│   ├── iflow_common.py       # Shared utilities (auth, API helpers, retry logic)
 │   ├── pipeline_create_kb_and_generate.py    # Pipeline 1: Create KB + upload + generate
-│   ├── pipeline_import_and_generate.py       # Pipeline 3: Import to existing KB + generate
 │   ├── pipeline_search_and_generate.py       # Pipeline 2: Search KB + generate
+│   ├── pipeline_import_and_generate.py       # Pipeline 3: Import to existing KB + generate
 │   ├── pipeline_semantic_search.py           # Pipeline 4: Semantic search + generate/share
-│   ├── pipeline_file_management.py           # Pipeline 5: File list/rename/delete
-│   └── pipeline_web_search.py                # Pipeline 6: Web search + import + generate
+│   ├── pipeline_file_management.py           # Pipeline 5: File list/rename/delete/info/retry
+│   ├── pipeline_web_search.py                # Pipeline 6: Web search + import + generate
+│   ├── pipeline_generate.py                  # Direct generation on existing KB
+│   ├── pipeline_kb.py                        # Knowledge base CRUD management
+│   ├── pipeline_check_status.py              # Check generation task progress
+│   └── pipeline_share.py                     # Share knowledge base
 ├── examples/                 # Usage examples for common workflows
 │   ├── student-literature-review.md
 │   ├── add-file-then-generate.md
@@ -77,7 +83,9 @@ iflow-nb/
 │   ├── web-search-fast.md
 │   └── web-search-deep.md
 └── references/
-    └── api.md                # Full API reference
+    ├── api.md                # Full API reference
+    ├── pipelines.md          # Pipeline parameter details & output formats
+    └── kb-matching.md        # Knowledge base matching logic
 ```
 
 ## Quick Examples
