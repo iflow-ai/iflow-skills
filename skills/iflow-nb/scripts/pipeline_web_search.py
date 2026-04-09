@@ -33,7 +33,8 @@ sys.path.insert(0, os.path.dirname(__file__))
 from iflow_common import (
     log, api_upload, extract_content_id, find_kb,
     poll_parsing, submit_creation, poll_creation,
-    start_search, poll_search, output,
+    start_search, poll_search, stop_search, delete_search, output,
+    validate_output_type, validate_preset,
 )
 
 
@@ -76,7 +77,7 @@ def main():
     parser = argparse.ArgumentParser(description="Pipeline 6: 联网搜索 → 导入 → 生成")
     parser.add_argument("--kb", default="", help="知识库名称")
     parser.add_argument("--kb-id", default="", help="知识库 ID")
-    parser.add_argument("--query", required=True, help="搜索关键词")
+    parser.add_argument("--query", default="", help="搜索关键词（除 --stop/--delete-search 外必填）")
     parser.add_argument("--type", default="FAST_SEARCH", choices=["FAST_SEARCH", "DEEP_RESEARCH"],
                         help="搜索类型 (默认 FAST_SEARCH)")
     parser.add_argument("--source", default="WEB", choices=["WEB", "SCHOLAR"],
@@ -88,15 +89,38 @@ def main():
     parser.add_argument("--no-generate", action="store_true", help="只搜索+导入，不生成内容")
     parser.add_argument("--search-only", action="store_true", help="只搜索，不导入也不生成")
     parser.add_argument("--poll-creation", action="store_true", help="等待生成完成")
+    parser.add_argument("--stop", action="store_true", help="停止当前正在进行的搜索任务")
+    parser.add_argument("--delete-search", action="store_true", help="删除搜索记录")
     args = parser.parse_args()
+
+    # 步骤 1: 查找知识库
+    kb_id = find_kb(args.kb or None, args.kb_id or None)
+    log(f"知识库 ID: {kb_id}")
+
+    # 停止/删除搜索（不需要 --query）
+    if args.stop:
+        ok = stop_search(kb_id)
+        log("搜索已停止" if ok else "停止搜索失败")
+        output({"collectionId": kb_id, "action": "stop", "success": ok})
+        return
+
+    if args.delete_search:
+        ok = delete_search(kb_id)
+        log("搜索记录已删除" if ok else "删除搜索记录失败")
+        output({"collectionId": kb_id, "action": "delete_search", "success": ok})
+        return
+
+    # 正常搜索流程需要 --query
+    if not args.query:
+        log("--query 参数必填（除非使用 --stop 或 --delete-search）")
+        sys.exit(1)
+
+    # 参数校验
+    args.output_type = validate_output_type(args.output_type)
+    validate_preset(args.preset, args.output_type)
 
     search_type = args.type
     source = args.source
-
-    # 步骤 1: 查找知识库
-    log("步骤 1: 查找知识库")
-    kb_id = find_kb(args.kb or None, args.kb_id or None)
-    log(f"知识库 ID: {kb_id}")
 
     # 步骤 2: 发起搜索
     log(f"步骤 2: 发起搜索 ({search_type} + {source})")
@@ -233,7 +257,7 @@ def main():
             log("等待创作完成...")
             creation_status = poll_creation(kb_id, creation_id)
 
-    output({
+    result = {
         "collectionId": kb_id,
         "searchId": search_id,
         "searchType": search_type,
@@ -242,10 +266,13 @@ def main():
         "resultCount": result_count,
         "results": result_summary,
         "reportUrl": report_url,
-        "importedContentIds": content_ids,
+        "contentIds": content_ids,
         "creationId": creation_id,
         "creationStatus": creation_status,
-    })
+    }
+    if fail_count > 0:
+        result["importFailedCount"] = fail_count
+    output(result)
 
 
 if __name__ == "__main__":

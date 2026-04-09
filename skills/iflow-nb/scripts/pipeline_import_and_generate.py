@@ -21,26 +21,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 sys.path.insert(0, os.path.dirname(__file__))
 from iflow_common import (
     log, api_post, api_upload, extract_content_id, check_success, find_kb,
-    get_file_type, poll_parsing, submit_creation, poll_creation, output,
+    upload_file, upload_url,
+    poll_parsing, submit_creation, poll_creation, output,
+    validate_output_type, validate_preset, validate_files, validate_urls,
+    create_kb,
 )
-
-
-def upload_file(collection_id, filepath):
-    filepath = filepath.strip()
-    if not os.path.isfile(filepath):
-        log(f"文件不存在: {filepath}")
-        return None
-    ft = get_file_type(filepath)
-    log(f"上传: {os.path.basename(filepath)}")
-    resp = api_upload(collection_id, file_path=filepath, file_type=ft)
-    return extract_content_id(resp) or None
-
-
-def upload_url(collection_id, url):
-    url = url.strip()
-    log(f"导入 URL: {url}")
-    resp = api_upload(collection_id, url=url, file_type="HTML")
-    return extract_content_id(resp) or None
 
 
 def main():
@@ -58,27 +43,62 @@ def main():
     parser.add_argument("--no-generate", action="store_true", help="只导入不生成")
     parser.add_argument("--poll-creation", action="store_true", help="轮询等待创作完成")
     parser.add_argument("--rename", action="store_true", help="文本导入后重命名")
+    parser.add_argument("--create-if-missing", action="store_true",
+                        help="知识库不存在时自动创建（用 --kb 的值作为名称）")
     args = parser.parse_args()
 
-    kb_id = find_kb(args.kb or None, args.kb_id or None)
+    # 参数校验
+    args.output_type = validate_output_type(args.output_type)
+    validate_preset(args.preset, args.output_type)
+    file_list = validate_files(args.files.split(",")) if args.files else []
+    url_list = validate_urls(args.urls.split(",")) if args.urls else []
+    if not file_list and not url_list and not args.text:
+        log("--files、--urls 或 --text 至少提供一个")
+        sys.exit(1)
+
+    # 短文本 + 无其他文件 + 未禁止生成 → 警告（大概率用户只想记录，不需要生成报告）
+    if args.text and not file_list and not url_list and not args.no_generate and len(args.text) < 200:
+        log("警告: 仅有短文本内容且未指定 --no-generate，将尝试生成报告。如仅需记录文本，建议加 --no-generate")
+
+    # 查找知识库，--create-if-missing 时找不到自动创建
+    kb_created = False
+    if args.create_if_missing:
+        kb_id = find_kb(args.kb or None, args.kb_id or None, exit_on_missing=False)
+        if kb_id is None:
+            if not args.kb:
+                log("--create-if-missing 需要 --kb 提供知识库名称")
+                sys.exit(1)
+            kb_id = create_kb(args.kb)
+            kb_created = True
+    else:
+        kb_id = find_kb(args.kb or None, args.kb_id or None)
     log(f"知识库 ID: {kb_id}")
 
     # 步骤 2: 上传/导入
     new_content_ids = []
+    failed_uploads = []
     text_cid = None
-    futures = []
+    futures = {}
 
     with ThreadPoolExecutor(max_workers=5) as pool:
-        if args.files:
-            for f in args.files.split(","):
-                futures.append(pool.submit(upload_file, kb_id, f))
-        if args.urls:
-            for u in args.urls.split(","):
-                futures.append(pool.submit(upload_url, kb_id, u))
+        for f in file_list:
+            fut = pool.submit(upload_file, kb_id, f)
+            futures[fut] = f
+        for u in url_list:
+            fut = pool.submit(upload_url, kb_id, u)
+            futures[fut] = u
         for fut in as_completed(futures):
-            cid = fut.result()
+            source = futures[fut]
+            try:
+                cid = fut.result()
+            except Exception as e:
+                log(f"上传异常: {source} — {e}")
+                failed_uploads.append({"source": source, "error": str(e)})
+                continue
             if cid:
                 new_content_ids.append(cid)
+            else:
+                failed_uploads.append({"source": source, "error": "上传返回空 contentId"})
 
     # 纯文本导入（同步，因为需要临时文件）
     if args.text:
@@ -92,10 +112,15 @@ def main():
             if text_cid:
                 new_content_ids.append(text_cid)
                 log(f"文本已上传: {text_cid}")
+            else:
+                failed_uploads.append({"source": "(文本导入)", "error": "上传返回空 contentId"})
         finally:
             os.unlink(tmp_path)
 
-    log(f"已导入 {len(new_content_ids)} 个内容")
+    if failed_uploads:
+        log(f"已导入 {len(new_content_ids)} 个内容, {len(failed_uploads)} 个失败")
+    else:
+        log(f"已导入 {len(new_content_ids)} 个内容")
 
     # 步骤 3: 轮询解析
     if new_content_ids:
@@ -115,7 +140,7 @@ def main():
                             "contentType": ct,
                             "contentId": text_cid,
                             "removeFlag": False,
-                            "extra": {"fileName": f"{args.text_title}.md"},
+                            "extra": {"fileName": args.text_title if args.text_title.endswith(".md") else f"{args.text_title}.md"},
                         })
                         if not check_success(rename_resp, "重命名"):
                             log("重命名失败，文件将保留临时名称")
@@ -144,13 +169,20 @@ def main():
         if creation_id and args.poll_creation:
             creation_status = poll_creation(kb_id, creation_id)
 
-    output({
+    result = {
         "collectionId": kb_id,
-        "newContentIds": new_content_ids,
+        "contentIds": new_content_ids,
         "totalFiles": total_files,
         "creationId": creation_id,
         "creationStatus": creation_status,
-    })
+    }
+    if kb_created:
+        result["kbCreated"] = True
+        result["kbName"] = args.kb
+    if failed_uploads:
+        result["failedCount"] = len(failed_uploads)
+        result["failedItems"] = failed_uploads
+    output(result)
 
 
 if __name__ == "__main__":

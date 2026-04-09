@@ -16,8 +16,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
 from iflow_common import (
-    log, api_post, find_kb, submit_creation, output,
-    BASE_URL,
+    log, api_post, find_kb, submit_creation, poll_creation, output,
+    validate_output_type, validate_preset, build_share_url,
 )
 
 
@@ -32,8 +32,13 @@ def main():
     parser.add_argument("--gen-query", default="", help="创作要求")
     parser.add_argument("--preset", default="", help="PPT 风格")
     parser.add_argument("--share", action="store_true", help="生成分享链接")
+    parser.add_argument("--poll-creation", action="store_true", help="轮询等待创作完成")
     parser.add_argument("--timeout", type=int, default=120, help="searchChunk 超时秒数")
     args = parser.parse_args()
+
+    # 参数校验
+    args.output_type = validate_output_type(args.output_type)
+    validate_preset(args.preset, args.output_type)
 
     kb_id = find_kb(args.kb or None, args.kb_id or None)
     log(f"知识库 ID: {kb_id}")
@@ -79,6 +84,7 @@ def main():
 
     # 步骤 3: 生成（可选）
     creation_id = None
+    creation_status = None
     if args.generate and node_count > 0:
         log(f"步骤 3: 基于检索结果生成 {args.output_type}")
         ready_files = [{"contentId": f["contentId"]} for f in source_files if f["status"] == "success"]
@@ -89,6 +95,10 @@ def main():
                 preset=args.preset or None,
                 files=ready_files,
             )
+            creation_status = "submitted" if creation_id else "failed"
+
+            if creation_id and args.poll_creation:
+                creation_status = poll_creation(kb_id, creation_id)
 
     # 步骤 4: 分享（可选）
     share_url = None
@@ -97,7 +107,7 @@ def main():
         share_resp = api_post("/api/v1/knowledge/shareNotebook", {"collectionId": kb_id})
         share_data = share_resp.get("data")
         if share_data:
-            share_url = f"{BASE_URL}/inotebook/share?shareId={share_data}"
+            share_url = build_share_url(share_data)
             log(f"分享链接: {share_url}")
 
     output({
@@ -107,6 +117,7 @@ def main():
         "nodes": nodes,
         "sourceFiles": source_files,
         "creationId": creation_id,
+        "creationStatus": creation_status,
         "shareUrl": share_url,
     })
 

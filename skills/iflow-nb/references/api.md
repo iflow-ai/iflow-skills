@@ -139,17 +139,15 @@
 
 `POST /api/v1/knowledge/clearCollection`
 
-请求参数（Query String）:
+请求参数（**form-urlencoded**，不接受 JSON Body）:
 
-| 参数 | 类型 | 必填 | 说明 |
+| 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | `collectionId` | string | 是 | 知识库 ID |
 
-示例: `POST /api/v1/knowledge/clearCollection?collectionId=xxx`
-
 返回: `{"success": true, "code": "200", "data": false}`
 
-> **注意**: `data` 字段始终返回 `false`，不能用于判断知识库是否存在。删除操作本身是幂等的——对不存在的 ID 调用也不会报错。如需确认删除结果，应通过 `queryCollection` 查询（删除后返回 `data: null`）。
+> **注意**: 此接口必须使用 `application/x-www-form-urlencoded` 格式，发送 JSON Body 会返回 HTTP 400。`data` 字段始终返回 `false`，不能用于判断知识库是否存在。删除操作本身是幂等的——对不存在的 ID 调用也不会报错。如需确认删除结果，应通过 `queryCollection` 查询（删除后返回 `data: null`）。
 
 ---
 
@@ -442,7 +440,7 @@ Content-Type: `multipart/form-data`
 
 返回: `{"success": true, "code": "200", "data": "加密分享ID字符串"}`
 
-分享链接格式: `https://iflow.cn/inotebook/share?shareId={data}`
+分享链接格式: `https://iflow.cn/inotebook/share?shareId={data}`（注意：分享链接域名固定为 `iflow.cn`，不是 API 域名 `platform.iflow.cn`）
 
 ---
 
@@ -621,13 +619,13 @@ Content-Type: `application/json`
 
 **POST** `/api/v1/knowledge/stopSearch`
 
-**请求参数（Query String）：**
+Content-Type: `application/x-www-form-urlencoded`（不接受 JSON）
+
+**请求参数：**
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | `notebookId` | string | 是 | 知识库 ID |
-
-示例: `POST /api/v1/knowledge/stopSearch?notebookId=xxx`
 
 **响应：**
 
@@ -645,13 +643,13 @@ Content-Type: `application/json`
 
 **POST** `/api/v1/knowledge/deleteSearch`
 
-**请求参数（Query String）：**
+Content-Type: `application/x-www-form-urlencoded`（不接受 JSON）
+
+**请求参数：**
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | `notebookId` | string | 是 | 知识库 ID |
-
-示例: `POST /api/v1/knowledge/deleteSearch?notebookId=xxx`
 
 **响应：**
 

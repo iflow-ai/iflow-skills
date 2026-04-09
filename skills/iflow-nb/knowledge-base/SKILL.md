@@ -1,3 +1,8 @@
+---
+name: iflow-nb-knowledge-base
+description: 知识库与文件管理子技能，支持知识库增删改查、文件上传/URL导入/文本导入、文件解析状态轮询、语义检索。
+---
+
 # Knowledge Base (知识库与文件管理)
 
 > Prerequisites: see root `../SKILL.md` for setup, credentials, and `iflow_api()` helper.
@@ -14,6 +19,8 @@
 | 网页 / 公众号文章 (URL) | URL 导入 | `POST /api/v1/knowledge/upload` (content 字段传 URL, type=HTML) |
 | 纯文本内容 | Agent 创建 md 文件后上传 | `POST /api/v1/knowledge/upload` (multipart) |
 
+> **文件限制**：单文件最大 **20MB**，PDF 最多 **500 页**。超出限制的文件需先拆分后分批上传到同一知识库。
+
 ## 接口决策表
 
 | 用户意图 | 调用接口 | 关键参数 |
@@ -22,7 +29,7 @@
 | 查看知识库列表 | `GET /api/v1/knowledge/pageQueryCollections` | `pageNum`, `pageSize`, `keyword` |
 | 查看知识库详情 | `GET /api/v1/knowledge/queryCollection` | `collectionId` |
 | 更新知识库信息 | `POST /api/v1/knowledge/modifyCollections` | `collectionId`, `collectionName`, `description` |
-| 删除知识库 | `POST /api/v1/knowledge/clearCollection` | `collectionId`，⚠️ 需用户确认 |
+| 删除知识库 | **`pipeline_kb.py delete`** 或 `clearCollection` API | `--kb` `--force`，⚠️ 需用户确认 |
 | 上传本地文件 | `POST /api/v1/knowledge/upload` | multipart: `file`, `collectionId`, `type` |
 | 通过 URL 导入网页 | `POST /api/v1/knowledge/upload` | `content`(放URL), `collectionId`, `type=HTML` |
 | 通过文本创建 | Agent 创建 md → `POST /api/v1/knowledge/upload` | 见「文本导入」 |
@@ -38,23 +45,20 @@
 
 ### 创建知识库
 
-```bash
-iflow_api POST "/api/v1/knowledge/saveCollection" "{
-  \"collectionName\": \"AI 论文集\",
-  \"description\": \"核心论文\"
-}"
-# 返回: {"success": true, "code": "200", "data": "新知识库的collectionId"}
+**推荐使用 Pipeline 脚本：**
+```shell
+python3 scripts/pipeline_kb.py create --name "AI 论文集" --description "核心论文"
 ```
+
+> 直接调 API（仅在 Pipeline 不可用时）：`iflow_api POST "/api/v1/knowledge/saveCollection" "{\"collectionName\": \"AI 论文集\", \"description\": \"核心论文\"}"`
 
 ### 查看知识库列表
 
-```bash
-iflow_api GET "/api/v1/knowledge/pageQueryCollections?pageNum=1&pageSize=50"
-# 返回: {"data": [{name, code(作为collectionId), extra.totalCnt, ...}], "total": "8"}
-
-# 按名称搜索
-iflow_api GET "/api/v1/knowledge/pageQueryCollections?pageNum=1&pageSize=50&keyword=AI"
+```shell
+python3 scripts/pipeline_kb.py list [--keyword "AI"]
 ```
+
+> 直接调 API：`iflow_api GET "/api/v1/knowledge/pageQueryCollections?pageNum=1&pageSize=50&keyword=AI"`
 
 ### 上传本地文件
 
@@ -93,9 +97,9 @@ curl -s -X POST "${IFLOW_URL}/api/v1/knowledge/upload" \
   -F "content=https://mp.weixin.qq.com/s/xxx" \
   -F "collectionId=${COLLECTION_ID}" \
   -F "type=HTML" \
-  -F "file=@"
+  -F "file=;filename="
 # ⚠️ URL 放在 content 字段（不是 fileUrl）
-# ⚠️ 需要传空的 file 字段保持接口兼容性
+# ⚠️ 需要传空的 file 字段保持接口兼容性（-F "file=;filename=" 发送一个空文件）
 # 返回含 contentId，随后轮询解析状态
 ```
 
@@ -146,51 +150,30 @@ rm "$TMP_FILE"
 > - `success` — 解析完成
 > - `failed` — 解析失败
 
-### 上传后轮询解析的完整流程
+### 上传后轮询解析状态
 
-**⚠️ 重要：upload 接口的响应不包含 `fileId` 和 `contentType`，需要先查询文件列表获取。**
+> **Pipeline 脚本已自动处理文件解析轮询**，Agent 直接调用 Pipeline 即可，无需手动轮询。以下仅供直接调 API 时参考。
 
-完整步骤如下：
+**推荐方式（Pipeline 脚本使用此方式）**：上传后用 `pageQueryContents` 轮询文件的 `status` 字段，每 5 秒一次，直到 `success` 或 `failed`：
 
-```
-步骤 A: 上传文件
-  → 上传接口返回 contentId（记住这个值）
-
-步骤 B: 查询文件列表获取 contentType 和 fileId
-  → 调用 pageQueryContents（参数通过 URL query string 传递）
-  → 从返回的文件列表中，找到 contentId 匹配的文件
-  → 记录该文件的 contentType（如 "UPLOADV2"）和 extra.fileId
-
-步骤 C: 轮询解析状态
-  → 用步骤 B 获取的 contentType、contentId、fileId 调用 parseStatusThenCallBack
-  → 每 5 秒轮询一次，直到返回 success 或 failed
-```
-
-**步骤 B — 查询文件列表获取参数：**
 ```bash
 # 参数通过 URL query string 传递
-iflow_api POST "/api/v1/knowledge/pageQueryContents?collectionId=${COLLECTION_ID}&pageNum=1&pageSize=50"
-# 从返回的 data 数组中找到 contentId 匹配的文件，读取：
-#   contentType → 如 "UPLOADV2"（用于 parseStatusThenCallBack 的 contentType 参数）
-#   extra.fileId → 如 "74f1b667-..."（用于 parseStatusThenCallBack 的 fileId 参数）
+iflow_api POST "/api/v1/knowledge/pageQueryContents?collectionId=${COLLECTION_ID}&pageNum=1&pageSize=100"
+# 从返回的 data 数组中找到 contentId 匹配的文件，检查 status 字段
+# status: pending → processing → success | failed
 ```
 
-**步骤 C — 轮询解析状态：**
+**精确方式（可选）**：如需针对特定文件精确轮询，可先从 `pageQueryContents` 获取 `contentType` 和 `extra.fileId`，再调用 `parseStatusThenCallBack`：
+
 ```bash
 iflow_api POST "/api/v1/knowledge/parseStatusThenCallBack" "{
   \"reqItems\": [
     {\"contentType\": \"UPLOADV2\", \"contentId\": \"${CONTENT_ID}\", \"fileId\": \"${FILE_ID}\"}
   ]
 }"
-# 返回: {"data": {"74f1b667-...": "processing"}, "success": true, "code": "200"}
-# 状态值: pending(排队等待解析) → processing(解析中) → success（解析完成） | failed（解析失败）
-# 如果返回 pending，说明文件已上传成功，正在排队等待解析，这是正常流程
 ```
 
-> **⚠️ 常见错误**：
-> - `contentType` 写错（如写成 `"UPLOAD"` 但实际是 `"UPLOADV2"`）→ 返回 500 错误
-
-**简化路径**：如果不需要精确轮询，也可以直接用 `pageQueryContents` 检查文件的 `status` 字段。当 `status` 为 `success` 时表示解析完成，可以直接用于创作任务。
+> **⚠️ 注意**：`contentType` 必须与文件实际类型完全匹配（如 `"UPLOADV2"` 而非 `"UPLOAD"`），否则返回 500 错误。
 
 轮询时展示进度：
 ```
@@ -341,12 +324,34 @@ iflow_api POST "/api/v1/knowledge/searchChunk" "{
 | 文件名搜索 | `pageQueryContents` + `fileName` 参数 | 按文件名关键字过滤 | 快速，但只能按文件名匹配 |
 | Agent 摘要匹配 | `pageQueryContents` 获取列表 | Agent 根据 summary 字段自行判断 | 快速，但依赖文件级摘要，粒度粗 |
 
-## 文件重命名
+## 文件管理操作
 
-> **前置步骤**：需要先通过 `pageQueryContents` 获取文件的 `contentType`（如 `UPLOADV2`），因为 `updateContent2Collection` 的 `contentType` 参数必须与文件实际值匹配。
+**优先使用 Pipeline 脚本**（自动处理 `contentType` 获取等细节）：
+
+```shell
+# 重命名
+python3 scripts/pipeline_file_management.py rename --kb "竞品分析" --file "旧名" --new-name "新名.pdf"
+
+# 删除单个文件
+python3 scripts/pipeline_file_management.py delete --kb "竞品分析" --file "文件名" --force
+
+# 批量删除
+python3 scripts/pipeline_file_management.py batch-delete --kb "竞品分析" --files "文件1,文件2" --force
+
+# 查看文件详情
+python3 scripts/pipeline_file_management.py info --kb "竞品分析" --file "文件名"
+
+# 重试解析失败的文件
+python3 scripts/pipeline_file_management.py retry --kb "竞品分析" --file "文件名"
+```
+
+> 以下 API 细节仅供 Pipeline 不可用时参考。
+
+### 重命名（API）
+
+> 需要先通过 `pageQueryContents` 获取文件的 `contentType`（如 `UPLOADV2`）。
 
 ```bash
-# contentType 从 pageQueryContents 返回的文件信息中获取，如 "UPLOADV2"
 iflow_api POST "/api/v1/knowledge/updateContent2Collection" "{
   \"collectionId\": \"${COLLECTION_ID}\",
   \"contentType\": \"UPLOADV2\",
@@ -356,31 +361,20 @@ iflow_api POST "/api/v1/knowledge/updateContent2Collection" "{
 }"
 ```
 
-## 删除操作
+### 删除（API）
 
-知识库和文件的删除**不可逆**，必须让用户确认：
-
-```
-确认删除知识库「AI 论文集」？
-将永久删除知识库及其中所有 5 个文件，不可恢复。
-```
-
-### 删除单个文件
-
-> 同样需要先获取文件的 `contentType`。
+知识库和文件的删除**不可逆**，必须让用户确认。
 
 ```bash
+# 删除单个文件（同样需要先获取 contentType）
 iflow_api POST "/api/v1/knowledge/updateContent2Collection" "{
   \"collectionId\": \"${COLLECTION_ID}\",
   \"contentType\": \"UPLOADV2\",
   \"contentId\": \"${CONTENT_ID}\",
   \"removeFlag\": true
 }"
-```
 
-### 批量删除文件
-
-```bash
+# 批量删除
 iflow_api POST "/api/v1/knowledge/batchDeleteCollectionContent" "{
   \"collectionId\": \"${COLLECTION_ID}\",
   \"contentIds\": [\"${CONTENT_ID1}\", \"${CONTENT_ID2}\"]

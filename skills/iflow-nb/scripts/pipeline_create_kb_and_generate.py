@@ -16,33 +16,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 sys.path.insert(0, os.path.dirname(__file__))
 from iflow_common import (
-    log, api_post, api_upload, extract_content_id, find_kb,
-    get_file_type, poll_parsing, submit_creation, poll_creation, output,
+    log, api_post, upload_file, upload_url,
+    poll_parsing, submit_creation, poll_creation, output,
+    validate_output_type, validate_preset, validate_files, validate_urls,
 )
-
-
-def upload_file(collection_id, filepath):
-    filepath = filepath.strip()
-    if not os.path.isfile(filepath):
-        log(f"文件不存在: {filepath}")
-        return None
-    ft = get_file_type(filepath)
-    log(f"上传本地文件: {os.path.basename(filepath)} ({ft})")
-    resp = api_upload(collection_id, file_path=filepath, file_type=ft)
-    cid = extract_content_id(resp)
-    if not cid:
-        log(f"上传失败 {os.path.basename(filepath)}: {resp.get('message', '未知错误')}")
-    return cid
-
-
-def upload_url(collection_id, url):
-    url = url.strip()
-    log(f"导入 URL: {url}")
-    resp = api_upload(collection_id, url=url, file_type="HTML")
-    cid = extract_content_id(resp)
-    if not cid:
-        log(f"导入失败 {url}: {resp.get('message', '未知错误')}")
-    return cid
 
 
 def main():
@@ -58,6 +35,15 @@ def main():
     parser.add_argument("--poll-creation", action="store_true", help="轮询等待创作完成")
     args = parser.parse_args()
 
+    # 参数校验
+    args.output_type = validate_output_type(args.output_type)
+    validate_preset(args.preset, args.output_type)
+    file_list = validate_files(args.files.split(",")) if args.files else []
+    url_list = validate_urls(args.urls.split(",")) if args.urls else []
+    if not file_list and not url_list:
+        log("--files 或 --urls 至少提供一个")
+        sys.exit(1)
+
     desc = args.description or args.name
 
     # 步骤 1: 创建知识库
@@ -72,23 +58,36 @@ def main():
 
     # 步骤 2: 并行上传
     content_ids = []
-    futures = []
+    failed_uploads = []
+    futures = {}
     with ThreadPoolExecutor(max_workers=5) as pool:
-        if args.files:
-            for f in args.files.split(","):
-                futures.append(pool.submit(upload_file, collection_id, f))
-        if args.urls:
-            for u in args.urls.split(","):
-                futures.append(pool.submit(upload_url, collection_id, u))
+        for f in file_list:
+            fut = pool.submit(upload_file, collection_id, f)
+            futures[fut] = f
+        for u in url_list:
+            fut = pool.submit(upload_url, collection_id, u)
+            futures[fut] = u
         for fut in as_completed(futures):
-            cid = fut.result()
+            source = futures[fut]
+            try:
+                cid = fut.result()
+            except Exception as e:
+                log(f"上传异常: {source} — {e}")
+                failed_uploads.append({"source": source, "error": str(e)})
+                continue
             if cid:
                 content_ids.append(cid)
+            else:
+                failed_uploads.append({"source": source, "error": "上传返回空 contentId"})
 
-    log(f"已上传 {len(content_ids)} 个文件")
+    if failed_uploads:
+        log(f"已上传 {len(content_ids)} 个文件, {len(failed_uploads)} 个失败")
+    else:
+        log(f"已上传 {len(content_ids)} 个文件")
 
     if not content_ids:
         output({"collectionId": collection_id, "contentIds": [],
+                "failedCount": len(failed_uploads), "failedItems": failed_uploads,
                 "creationId": None, "creationStatus": None})
         return
 
@@ -114,12 +113,16 @@ def main():
         if creation_id and args.poll_creation:
             creation_status = poll_creation(collection_id, creation_id)
 
-    output({
+    result = {
         "collectionId": collection_id,
         "contentIds": content_ids,
         "creationId": creation_id,
         "creationStatus": creation_status,
-    })
+    }
+    if failed_uploads:
+        result["failedCount"] = len(failed_uploads)
+        result["failedItems"] = failed_uploads
+    output(result)
 
 
 if __name__ == "__main__":

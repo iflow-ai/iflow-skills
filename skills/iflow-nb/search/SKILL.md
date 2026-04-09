@@ -1,3 +1,8 @@
+---
+name: iflow-nb-search
+description: 联网搜索子技能，支持快速搜索(WEB/SCHOLAR)和深度研究(DEEP_RESEARCH)，搜索结果可导入知识库并生成报告。
+---
+
 # 联网搜索（Web Search）
 
 > 前置条件：参见根目录 `../SKILL.md` 了解凭证配置和 `iflow_api()` 辅助函数。

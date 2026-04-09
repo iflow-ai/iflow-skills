@@ -1,4 +1,9 @@
-# Outputs (内容生成)
+---
+name: iflow-nb-reports
+description: 内容生成子技能，支持 PDF/DOCX/MARKDOWN/PPT/XMIND/PODCAST/VIDEO 七种产出类型的创建、状态查询和进度展示。
+---
+
+# Reports (内容生成)
 
 > Prerequisites: see root `../SKILL.md` for setup, credentials, and `iflow_api()` helper.
 
@@ -36,6 +41,22 @@
 | "同时生成报告和PPT" | 多个 | — | 并行提交 |
 | "帮我总结一下" | `PDF` | — | 总结 = 报告，通过 query 描述总结要求 |
 | "对比分析这两篇论文" | `PDF` | — | 通过 query 传达分析要求 |
+
+> **PPT 风格引导**：用户要求生成 PPT 但未指定风格时，Agent 应主动询问：「PPT 有**商务**和**卡通**两种风格，您想用哪种？默认使用商务风格。」用户说"随便"或不选择时使用商务。
+
+## 推荐方式
+
+**优先使用 Pipeline 脚本**，无需手动拼接 API：
+
+```shell
+# 对已有知识库直接生成
+python3 scripts/pipeline_generate.py --kb "知识库名称" --output-type PDF --query "创作要求"
+
+# 查看生成进度
+python3 scripts/pipeline_check_status.py --kb "知识库名称"
+```
+
+> 以下 API 细节仅供 Pipeline 不可用时参考。
 
 ## 接口决策表
 
@@ -130,6 +151,8 @@ iflow_api POST "/api/v1/knowledge/creationTask" "{
 ```
 
 ### 3. 等待策略
+
+> **⚠️ `submitted` ≠ 已完成**：提交成功（`creationStatus: "submitted"`）仅表示任务进入队列，生成尚未开始或正在进行。Agent **绝不能**在此时告诉用户"已生成完成"。只有 `status=success` 才代表真正完成。
 
 **所有创作任务耗时较长（10-30分钟），提交后不要阻塞等待**，立即告知用户预估时间：
 
@@ -227,11 +250,14 @@ iflow_api GET "/api/v1/knowledge/creationList?collectionId=${COLLECTION_ID}"
 
 ## 状态查询
 
-用户说"视频做好了吗""报告进度怎样""查看进度"时：
+用户说"视频做好了吗""报告进度怎样""查看进度"时，**优先使用 Pipeline 脚本**：
 
-```bash
-iflow_api GET "/api/v1/knowledge/creationList?collectionId=${COLLECTION_ID}"
+```shell
+python3 scripts/pipeline_check_status.py --kb "知识库名称"
+# 或指定特定任务：--creation-id "xxx"
 ```
+
+> 直接调 API（仅在 Pipeline 不可用时）：`iflow_api GET "/api/v1/knowledge/creationList?collectionId=${COLLECTION_ID}"`
 
 **排队中（pending）：**
 ```
@@ -254,9 +280,12 @@ iflow_api GET "/api/v1/knowledge/creationList?collectionId=${COLLECTION_ID}"
 **失败：**
 ```
 任务: 请创建一份播客脚本 (播客)
-状态: 失败
-建议: 检查源文件，或更换文件后重试
+状态: 生成失败
+可能原因: 源文件内容不足或格式异常
+建议: 检查源文件是否已解析成功，或更换文件后重试
 ```
+
+> Agent 应主动从 `creationList` 响应的 `extra` 字段提取失败详情（`fileType`、`query`），展示给用户。不要只说"失败"而不给出原因。
 
 ## query 参数用法
 
@@ -273,10 +302,7 @@ iflow_api GET "/api/v1/knowledge/creationList?collectionId=${COLLECTION_ID}"
 
 ## 错误处理
 
-- `40002`: 知识库不存在 → 提示用户检查
-- `40004`: 文件解析中，暂不可用 → 等文件解析完成再重试
-- `40005`: 文件格式不支持 → 展示支持列表
-- 生成失败 → 展示 `message`，建议重试
+常见错误：`40004`（文件解析中）→ 等解析完成再重试。完整错误码列表见 `references/api.md` 错误码章节。
 
 ## 注意事项
 

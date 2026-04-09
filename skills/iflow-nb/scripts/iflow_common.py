@@ -10,6 +10,7 @@ import os
 import sys
 import json
 import time
+import functools
 import urllib.parse
 from pathlib import Path
 
@@ -30,13 +31,23 @@ def load_credentials():
     return key, base_url
 
 
-API_KEY, BASE_URL = load_credentials()
-SESSION = requests.Session()
-SESSION.headers.update({
-    "Authorization": f"Bearer {API_KEY}",
-    "Content-Type": "application/json",
-})
+API_KEY = None
+BASE_URL = None
+SESSION = None
 TIMEOUT = (10, 60)  # (connect, read)
+
+
+def _init():
+    """惰性初始化：首次调用 API 时才加载凭证和创建 Session。"""
+    global API_KEY, BASE_URL, SESSION
+    if SESSION is not None:
+        return
+    API_KEY, BASE_URL = load_credentials()
+    SESSION = requests.Session()
+    SESSION.headers.update({
+        "Authorization": f"Bearer {API_KEY}",
+        "Content-Type": "application/json",
+    })
 
 
 # ─── 日志（输出到 stderr） ──────────────────────────────
@@ -45,28 +56,90 @@ def log(msg):
     print(f">>> {msg}", file=sys.stderr)
 
 
+# ─── 网络重试 ────────────────────────────────────────────
+
+TRANSIENT_CODES = {"TIMEOUT", "NETWORK_ERROR", "REQUEST_ERROR"}
+
+def retry_on_transient(max_retries=2, delay=5):
+    """网络瞬态错误自动重试（不影响业务层重试逻辑如 submit_creation 的 500 重试）。"""
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            for attempt in range(max_retries + 1):
+                result = func(*args, **kwargs)
+                if isinstance(result, dict) and result.get("code") in TRANSIENT_CODES:
+                    if attempt < max_retries:
+                        log(f"网络错误，{delay}s 后重试 ({attempt + 1}/{max_retries})")
+                        time.sleep(delay)
+                        continue
+                return result
+            return result
+        return wrapper
+    return decorator
+
+
 # ─── API 调用 ───────────────────────────────────────────
 
+def _safe_request(method, url, timeout, **kwargs):
+    """统一的请求错误处理。网络/解析异常返回错误 dict，业务错误（HTTP 200 + success:false）原样返回。"""
+    try:
+        r = method(url, timeout=timeout, **kwargs)
+        # 先尝试解析 JSON（iflow API 即使 HTTP 500 也可能返回有效 JSON）
+        try:
+            data = r.json()
+            return data  # 业务层的 success/code 由调用方（如 submit_creation）处理
+        except ValueError:
+            pass
+        # JSON 解析失败且非 2xx → 返回 HTTP 错误
+        if r.status_code >= 400:
+            log(f"服务异常 [HTTP {r.status_code}]: {url}")
+            return {"success": False, "code": str(r.status_code), "message": f"服务异常 (HTTP {r.status_code})"}
+        # JSON 解析失败但 2xx → 返回解析错误
+        log(f"响应解析失败: {url}")
+        return {"success": False, "code": "PARSE_ERROR", "message": "服务返回了非 JSON 响应"}
+    except requests.exceptions.Timeout:
+        log(f"请求超时: {url}")
+        return {"success": False, "code": "TIMEOUT", "message": "请求超时，请稍后重试"}
+    except requests.exceptions.ConnectionError:
+        log(f"网络连接失败: {url}")
+        return {"success": False, "code": "NETWORK_ERROR", "message": "网络连接失败"}
+    except requests.exceptions.RequestException as e:
+        log(f"请求异常: {url} — {e}")
+        return {"success": False, "code": "REQUEST_ERROR", "message": str(e)}
+
+
+@retry_on_transient(max_retries=2, delay=5)
 def api_get(path, timeout=TIMEOUT):
-    r = SESSION.get(f"{BASE_URL}{path}", timeout=timeout)
-    return r.json()
+    _init()
+    return _safe_request(SESSION.get, f"{BASE_URL}{path}", timeout)
 
 
+@retry_on_transient(max_retries=2, delay=5)
 def api_post(path, body=None, timeout=TIMEOUT):
-    r = SESSION.post(f"{BASE_URL}{path}", json=body, timeout=timeout)
-    return r.json()
+    _init()
+    return _safe_request(SESSION.post, f"{BASE_URL}{path}", timeout, json=body)
+
+
+@retry_on_transient(max_retries=2, delay=5)
+def api_post_form(path, data=None, timeout=TIMEOUT):
+    """POST 请求使用 application/x-www-form-urlencoded（clearCollection/stopSearch/deleteSearch 不接受 JSON）"""
+    _init()
+    headers = {"Content-Type": "application/x-www-form-urlencoded"}
+    return _safe_request(SESSION.post, f"{BASE_URL}{path}", timeout, data=data, headers=headers)
 
 
 def api_upload(collection_id, file_path=None, url=None, file_type="PDF"):
     """上传本地文件或导入 URL（multipart/form-data）"""
+    _init()
     headers = {"Authorization": f"Bearer {API_KEY}"}  # 不带 Content-Type，让 requests 自动设
+    upload_url = f"{BASE_URL}/api/v1/knowledge/upload"
+    upload_timeout = (10, 120)
     if file_path:
         data = {"collectionId": collection_id, "type": file_type}
-        files = {"file": (os.path.basename(file_path), open(file_path, "rb"))}
-        r = requests.post(f"{BASE_URL}/api/v1/knowledge/upload", data=data, files=files,
-                           headers=headers, timeout=(10, 120))
-        resp = r.json()
-        files["file"][1].close()
+        with open(file_path, "rb") as f:
+            files = {"file": (os.path.basename(file_path), f)}
+            resp = _safe_request(requests.post, upload_url, upload_timeout,
+                                 data=data, files=files, headers=headers)
     elif url:
         # URL 模式：必须用 multipart/form-data（与 curl -F 一致）
         # 添加空的 file 字段保持接口兼容性
@@ -76,9 +149,8 @@ def api_upload(collection_id, file_path=None, url=None, file_type="PDF"):
             ("content", (None, url)),
             ("file", ("", b"")),  # 空文件，兼容 type=HTML 时需要 file 字段
         ]
-        r = requests.post(f"{BASE_URL}/api/v1/knowledge/upload", files=files,
-                           headers=headers, timeout=(10, 120))
-        resp = r.json()
+        resp = _safe_request(requests.post, upload_url, upload_timeout,
+                             files=files, headers=headers)
     else:
         resp = {"success": False, "message": "file_path 或 url 必须提供一个"}
     return resp
@@ -99,6 +171,32 @@ def extract_content_id(resp):
     return ""
 
 
+def upload_file(collection_id, filepath):
+    """上传本地文件到知识库，返回 contentId 或 None。"""
+    filepath = filepath.strip()
+    if not os.path.isfile(filepath):
+        log(f"文件不存在: {filepath}")
+        return None
+    ft = get_file_type(filepath)
+    log(f"上传: {os.path.basename(filepath)} ({ft})")
+    resp = api_upload(collection_id, file_path=filepath, file_type=ft)
+    cid = extract_content_id(resp)
+    if not cid:
+        log(f"上传失败 {os.path.basename(filepath)}: {resp.get('message', '未知错误')}")
+    return cid
+
+
+def upload_url(collection_id, url):
+    """导入 URL 到知识库，返回 contentId 或 None。"""
+    url = url.strip()
+    log(f"导入 URL: {url}")
+    resp = api_upload(collection_id, url=url, file_type="HTML")
+    cid = extract_content_id(resp)
+    if not cid:
+        log(f"导入失败 {url}: {resp.get('message', '未知错误')}")
+    return cid
+
+
 def check_success(resp, step=""):
     if resp.get("success") is True and resp.get("code") == "200":
         return True
@@ -109,7 +207,12 @@ def check_success(resp, step=""):
 
 # ─── 知识库查找 ──────────────────────────────────────────
 
-def find_kb(kb_name=None, kb_id=None):
+def find_kb(kb_name=None, kb_id=None, exit_on_missing=True, allow_fuzzy=True):
+    """查找知识库。
+
+    exit_on_missing=False 时找不到返回 None 而非 sys.exit。
+    allow_fuzzy=False 时禁用模糊匹配（用于破坏性操作如删除，防止误匹配）。
+    """
     if kb_id:
         return kb_id
     if not kb_name:
@@ -118,7 +221,7 @@ def find_kb(kb_name=None, kb_id=None):
 
     log(f'查找知识库「{kb_name}」')
     encoded = urllib.parse.quote(kb_name)
-    resp = api_get(f"/api/v1/knowledge/pageQueryCollections?pageNum=1&pageSize=50&keyword={encoded}")
+    resp = api_get(f"/api/v1/knowledge/pageQueryCollections?pageNum=1&pageSize=100&keyword={encoded}")
     items = resp.get("data", [])
 
     # 精确匹配
@@ -126,14 +229,33 @@ def find_kb(kb_name=None, kb_id=None):
         if item.get("name") == kb_name:
             return item["code"]
 
-    # 模糊兜底
-    if items:
+    # 模糊兜底（破坏性操作禁用）
+    if items and allow_fuzzy:
         actual = items[0]
         log(f'模糊匹配到知识库「{actual["name"]}」')
         return actual["code"]
 
-    log("未找到匹配的知识库")
-    sys.exit(1)
+    if exit_on_missing:
+        if items and not allow_fuzzy:
+            log(f"未找到精确匹配的知识库「{kb_name}」（模糊匹配已禁用）")
+        else:
+            log("未找到匹配的知识库")
+        sys.exit(1)
+    return None
+
+
+def create_kb(name, description=None):
+    """创建知识库，返回 collectionId。失败时 sys.exit(1)。"""
+    desc = description or name
+    log(f'创建知识库「{name}」')
+    resp = api_post("/api/v1/knowledge/saveCollection",
+                    {"collectionName": name, "description": desc})
+    collection_id = resp.get("data")
+    if not collection_id:
+        log(f"创建失败: {resp.get('message', '未知错误')}")
+        sys.exit(1)
+    log(f"知识库已创建: {collection_id}")
+    return collection_id
 
 
 # ─── 文件类型推断 ────────────────────────────────────────
@@ -148,6 +270,63 @@ def get_file_type(filepath):
     return EXT_MAP.get(ext, "PDF")
 
 
+# ─── 参数校验 ────────────────────────────────────────────
+
+VALID_OUTPUT_TYPES = {"PDF", "DOCX", "MARKDOWN", "PPT", "XMIND", "PODCAST", "VIDEO"}
+VALID_PRESETS = {"商务", "卡通"}
+
+def validate_output_type(t):
+    """校验 output-type 参数，返回标准化的大写值。无效时 sys.exit(1)。"""
+    upper = t.upper()
+    if upper not in VALID_OUTPUT_TYPES:
+        log(f"无效的输出类型 '{t}'，支持: {', '.join(sorted(VALID_OUTPUT_TYPES))}")
+        sys.exit(1)
+    return upper
+
+def validate_preset(preset, output_type):
+    """校验 preset 参数（仅 PPT 有效）。无效时 sys.exit(1)。"""
+    if not preset:
+        return
+    if output_type != "PPT":
+        log(f"preset 参数仅在 output-type=PPT 时有效，当前 output-type={output_type}")
+        sys.exit(1)
+    if preset not in VALID_PRESETS:
+        log(f"无效的 PPT 风格 '{preset}'，支持: {', '.join(sorted(VALID_PRESETS))}")
+        sys.exit(1)
+
+def validate_files(file_paths):
+    """校验文件路径列表，返回存在的路径。不存在的文件输出警告。"""
+    valid = []
+    for fp in file_paths:
+        fp = fp.strip()
+        if not fp:
+            continue
+        if not os.path.isfile(fp):
+            log(f"文件不存在: {fp}")
+        else:
+            valid.append(fp)
+    if not valid and file_paths:
+        log("所有文件路径均无效")
+        sys.exit(1)
+    return valid
+
+def validate_urls(urls):
+    """校验 URL 格式（至少以 http:// 或 https:// 开头）。"""
+    valid = []
+    for u in urls:
+        u = u.strip()
+        if not u:
+            continue
+        if not u.startswith(("http://", "https://")):
+            log(f"无效的 URL（需以 http:// 或 https:// 开头）: {u}")
+        else:
+            valid.append(u)
+    if not valid and urls:
+        log("所有 URL 均无效")
+        sys.exit(1)
+    return valid
+
+
 # ─── 轮询文件解析 ────────────────────────────────────────
 
 def poll_parsing(collection_id, content_ids, max_wait=300, interval=5):
@@ -159,7 +338,7 @@ def poll_parsing(collection_id, content_ids, max_wait=300, interval=5):
     failed_ids = set()
     elapsed = 0
     while elapsed < max_wait:
-        resp = api_post(f"/api/v1/knowledge/pageQueryContents?collectionId={collection_id}&pageNum=1&pageSize=100")
+        resp = api_post(f"/api/v1/knowledge/pageQueryContents?collectionId={collection_id}&pageNum=1&pageSize=200")
         items = resp.get("data") or []
         status_map = {it["contentId"]: it.get("status", "") for it in items}
 
@@ -233,7 +412,10 @@ def poll_creation(collection_id, creation_id, max_wait=1800, interval=30):
                     log("创作完成!")
                     return "success"
                 if st == "failed":
-                    log("创作失败")
+                    extra = item.get("extra") or {}
+                    fail_type = extra.get("fileType", "")
+                    fail_query = extra.get("query", "")
+                    log(f"创作失败: type={fail_type}, query={fail_query}")
                     return "failed"
                 log(f"创作中... ({elapsed}s)")
                 break
@@ -317,15 +499,26 @@ def poll_search(collection_id, search_id, max_wait=60, interval=3):
 
 
 def stop_search(collection_id):
-    """停止搜索（参数通过 query string 传递）"""
-    resp = api_post(f"/api/v1/knowledge/stopSearch?notebookId={collection_id}")
+    """停止搜索"""
+    resp = api_post_form("/api/v1/knowledge/stopSearch",
+                         {"notebookId": collection_id})
     return resp.get("success", False)
 
 
 def delete_search(collection_id):
-    """删除搜索（参数通过 query string 传递）"""
-    resp = api_post(f"/api/v1/knowledge/deleteSearch?notebookId={collection_id}")
+    """删除搜索"""
+    resp = api_post_form("/api/v1/knowledge/deleteSearch",
+                         {"notebookId": collection_id})
     return resp.get("success", False)
+
+
+# ─── 分享 URL ────────────────────────────────────────────
+
+SHARE_BASE_URL = "https://iflow.cn"
+
+def build_share_url(share_id):
+    """构造分享链接（域名固定为 iflow.cn，不是 API 域名 platform.iflow.cn）"""
+    return f"{SHARE_BASE_URL}/inotebook/share?shareId={share_id}"
 
 
 # ─── JSON 输出 ───────────────────────────────────────────

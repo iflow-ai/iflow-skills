@@ -13,7 +13,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
 from iflow_common import (
-    log, api_post, find_kb, submit_creation, output,
+    log, api_post, find_kb, submit_creation, poll_creation, output,
+    validate_output_type, validate_preset,
 )
 
 
@@ -27,7 +28,12 @@ def main():
     parser.add_argument("--query", default="", help="创作要求")
     parser.add_argument("--preset", default="", help="PPT 风格")
     parser.add_argument("--search-only", action="store_true", help="只搜索不生成")
+    parser.add_argument("--poll-creation", action="store_true", help="轮询等待创作完成")
     args = parser.parse_args()
+
+    # 参数校验
+    args.output_type = validate_output_type(args.output_type)
+    validate_preset(args.preset, args.output_type)
 
     kb_id = find_kb(args.kb or None, args.kb_id or None)
     log(f"知识库 ID: {kb_id}")
@@ -39,6 +45,12 @@ def main():
         log(f'步骤 2: 语义检索「{args.search}」(可能需要几秒到几十秒)...')
         body = {"query": args.search, "collectionId": kb_id}
         chunk_resp = api_post("/api/v1/knowledge/searchChunk", body, timeout=(10, 120))
+
+        if chunk_resp.get("success") is not True:
+            log(f"检索失败: {chunk_resp.get('message', '超时或服务异常')}")
+            output({"error": "检索失败", "collectionId": kb_id})
+            sys.exit(1)
+
         nodes = (chunk_resp.get("data") or {}).get("nodes", [])
         search_results = nodes
         node_count = len(nodes)
@@ -58,12 +70,14 @@ def main():
                     })
     else:
         log(f'步骤 2: 文件级搜索「{args.search}」')
-        files_resp = api_post(f"/api/v1/knowledge/pageQueryContents?collectionId={kb_id}&pageNum=1&pageSize=100")
-        q_lower = args.search.lower()
+        files_resp = api_post(f"/api/v1/knowledge/pageQueryContents?collectionId={kb_id}&pageNum=1&pageSize=200")
+        # 多 token OR 匹配：分词后任一命中即匹配（有意选择 OR 而非 AND，召回率更高）
+        tokens = [t.strip().lower() for t in args.search.split() if t.strip()]
         for item in files_resp.get("data", []):
             fname = (item.get("fileName") or "").lower()
             summary = (item.get("summary") or "").lower()
-            if q_lower in fname or q_lower in summary:
+            text = fname + " " + summary
+            if any(tok in text for tok in tokens):
                 matched_files.append({
                     "contentId": item["contentId"],
                     "fileName": item.get("fileName"),
@@ -92,6 +106,9 @@ def main():
                 files=ready_files,
             )
             creation_status = "submitted" if creation_id else "failed"
+
+            if creation_id and args.poll_creation:
+                creation_status = poll_creation(kb_id, creation_id)
 
     output({
         "collectionId": kb_id,

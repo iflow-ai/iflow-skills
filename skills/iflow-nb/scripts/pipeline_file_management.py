@@ -13,7 +13,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
-from iflow_common import log, api_post, find_kb, output
+from iflow_common import log, api_get, api_post, find_kb, output
 
 
 def get_file_list(collection_id):
@@ -29,7 +29,7 @@ def find_file_by_keyword(items, keyword):
 
 def main():
     parser = argparse.ArgumentParser(description="Pipeline 5: 文件管理")
-    parser.add_argument("action", choices=["list", "rename", "delete", "batch-delete"], help="操作类型")
+    parser.add_argument("action", choices=["list", "rename", "delete", "batch-delete", "info", "retry"], help="操作类型")
     parser.add_argument("--kb", default="", help="知识库名称")
     parser.add_argument("--kb-id", default="", help="知识库 ID")
     parser.add_argument("--file", default="", help="文件名关键字")
@@ -38,7 +38,8 @@ def main():
     parser.add_argument("--force", action="store_true", help="跳过删除确认")
     args = parser.parse_args()
 
-    collection_id = find_kb(args.kb or None, args.kb_id or None)
+    destructive = args.action in ("delete", "batch-delete")
+    collection_id = find_kb(args.kb or None, args.kb_id or None, allow_fuzzy=not destructive)
     log(f"知识库 ID: {collection_id}")
 
     contents_resp = get_file_list(collection_id)
@@ -98,6 +99,9 @@ def main():
         fname = matched.get("fileName", "")
 
         if not args.force:
+            if not sys.stdin.isatty():
+                log("非交互模式下必须使用 --force 参数跳过确认")
+                sys.exit(1)
             confirm = input(f">>> 确认删除文件「{fname}」？此操作不可恢复。[y/N] ")
             if confirm.lower() != "y":
                 log("用户取消删除")
@@ -146,6 +150,9 @@ def main():
             log(f"  {i + 1}. {name}")
 
         if not args.force:
+            if not sys.stdin.isatty():
+                log("非交互模式下必须使用 --force 参数跳过确认")
+                sys.exit(1)
             confirm = input(">>> 确认全部删除？此操作不可恢复。[y/N] ")
             if confirm.lower() != "y":
                 log("用户取消删除")
@@ -163,6 +170,64 @@ def main():
         log(f"已删除 {len(matched_ids)} 个文件，剩余 {remaining} 个")
         output({"action": "batch-delete", "collectionId": collection_id,
                 "deleted": len(matched_ids), "remaining": remaining})
+        return
+
+    # ═══ info ═══
+    if args.action == "info":
+        if not args.file:
+            log("info 需要 --file 参数")
+            sys.exit(1)
+        matched = find_file_by_keyword(items, args.file)
+        if not matched:
+            log(f"未找到包含 '{args.file}' 的文件")
+            sys.exit(1)
+        cid = matched["contentId"]
+        resp = api_get(f"/api/v1/knowledge/queryContent?collectionId={collection_id}&contentId={cid}")
+        data = resp.get("data")
+        if not data:
+            log("文件详情查询失败")
+            sys.exit(1)
+        extra = data.get("extra") or {}
+        output({
+            "collectionId": collection_id,
+            "contentId": data.get("contentId"),
+            "fileName": data.get("fileName"),
+            "status": data.get("status"),
+            "contentType": data.get("contentType"),
+            "summary": data.get("summary"),
+            "fileId": extra.get("fileId"),
+            "downloadUrl": extra.get("downloadUrl"),
+            "coverPhotoUrl": extra.get("coverPhotoUrl"),
+        })
+        return
+
+    # ═══ retry ═══
+    if args.action == "retry":
+        if not args.file:
+            log("retry 需要 --file 参数")
+            sys.exit(1)
+        matched = find_file_by_keyword(items, args.file)
+        if not matched:
+            log(f"未找到包含 '{args.file}' 的文件")
+            sys.exit(1)
+        if matched.get("status") != "failed":
+            log(f"文件「{matched.get('fileName')}」状态为 {matched.get('status')}，仅 failed 状态可重试")
+            sys.exit(1)
+        extra = matched.get("extra") or {}
+        file_id = extra.get("fileId")
+        if not file_id:
+            log("未找到 fileId，无法重试")
+            sys.exit(1)
+        log(f"重试解析: {matched.get('fileName')} (fileId={file_id})")
+        resp = api_get(f"/api/v1/knowledge/retryParsing?fileId={file_id}")
+        if resp.get("success") is True:
+            log("重试已发起")
+            output({"action": "retry", "collectionId": collection_id,
+                    "contentId": matched["contentId"], "fileName": matched.get("fileName"),
+                    "fileId": file_id})
+        else:
+            log(f"重试失败: {resp.get('message', '未知错误')}")
+            sys.exit(1)
 
 
 if __name__ == "__main__":
