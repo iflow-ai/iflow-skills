@@ -1,5 +1,5 @@
 ---
-name: iflow-nb-reports
+name: happy-notes-reports
 description: 内容生成子技能，支持 PDF/DOCX/MARKDOWN/PPT/XMIND/PODCAST/VIDEO 七种产出类型的创建、状态查询和进度展示。
 ---
 

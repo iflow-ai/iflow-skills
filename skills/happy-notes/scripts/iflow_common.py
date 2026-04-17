@@ -21,7 +21,7 @@ import requests
 def load_credentials():
     key = os.environ.get("IFLOW_API_KEY", "")
     if not key:
-        config_path = Path.home() / ".config" / "iflow-nb" / "api-key"
+        config_path = Path.home() / ".config" / "happy-notes" / "api-key"
         if config_path.exists():
             key = config_path.read_text().strip()
     if not key:

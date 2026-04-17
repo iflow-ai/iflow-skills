@@ -1,6 +1,6 @@
 {
-  "skill_name": "iflow-nb",
-  "description": "iflow-nb 技能回归测试用例集，覆盖核心场景和用户反馈中的常见错误",
+  "skill_name": "happy-notes",
+  "description": "happy-notes 技能回归测试用例集，覆盖核心场景和用户反馈中的常见错误",
   "evals": [
     {
       "id": 1,

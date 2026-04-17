@@ -5,7 +5,7 @@
 ## 第 1 步：检查默认配置
 
 ```bash
-IFLOW_DEFAULT_KB="${IFLOW_DEFAULT_KB:-$(cat ~/.config/iflow-nb/default_kb 2>/dev/null)}"
+IFLOW_DEFAULT_KB="${IFLOW_DEFAULT_KB:-$(cat ~/.config/happy-notes/default_kb 2>/dev/null)}"
 ```
 
 如果配置了默认知识库且与用户意图不矛盾，直接使用。

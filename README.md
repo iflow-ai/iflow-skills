@@ -10,7 +10,7 @@ Skills are folders of instructions, scripts, and resources that AI agents load d
 
 | Skill | Description |
 |-------|-------------|
-| [iflow-nb](skills/iflow-nb/) | Knowledge base management, file import, content generation (PDF/PPT/podcast/mind map/video), web search & deep research, semantic search |
+| [happy-notes](skills/happy-notes/) | Knowledge base management, file import, content generation (PDF/PPT/podcast/mind map/video), web search & deep research, semantic search |
 | [iflow-search](skills/iflow-search/) | Web search, image search, and web page content fetching for AI agents |
 
 ## Quick Start
@@ -20,20 +20,20 @@ Skills are folders of instructions, scripts, and resources that AI agents load d
 | Agent | Install Method |
 |-------|---------------|
 | [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | Copy to `~/.claude/skills/` or `.claude/skills/` |
-| [OpenClaw](https://github.com/openclaw/openclaw) | `npx clawhub@latest install iflow-nb` |
+| [OpenClaw](https://github.com/openclaw/openclaw) | `npx clawhub@latest install happy-notes` |
 | [Devin](https://devin.ai) | Commit to `.agents/skills/` in your repo |
 | [Windsurf](https://windsurf.com) | Copy to `.windsurf/skills/` |
-| [CrewAI](https://www.crewai.com) | `skills=["./skills/iflow-nb"]` |
+| [CrewAI](https://www.crewai.com) | `skills=["./skills/happy-notes"]` |
 
 > For any agent that supports the Agent Skills standard, place the skill directory under the agent's skill discovery path.
 
 ### 2. Configure Credentials
 
-Each skill documents its own setup requirements. For example, **iflow-nb** requires an [iflow API key](https://iflow.cn/?open=api-key):
+Each skill documents its own setup requirements. For example, **happy-notes** requires an [iflow API key](https://iflow.cn/?open=api-key):
 
 ```bash
 # Option A - Config file (recommended)
-mkdir -p ~/.config/iflow-nb && echo "your_api_key" > ~/.config/iflow-nb/api-key
+mkdir -p ~/.config/happy-notes && echo "your_api_key" > ~/.config/happy-notes/api-key
 
 # Option B - Environment variable
 export IFLOW_API_KEY="your_api_key"
@@ -58,7 +58,7 @@ iflow-skill/
 ├── README.md
 ├── LICENSE
 └── skills/
-    ├── iflow-nb/            # Knowledge base skill
+    ├── happy-notes/            # Knowledge base skill
     │   ├── SKILL.md         # Skill entry point
     │   ├── knowledge-base/  # KB & file management APIs
     │   ├── reports/         # Content generation APIs

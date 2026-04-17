@@ -1,4 +1,4 @@
-# iflow-nb
+# happy-notes
 
 An [Agent Skills](https://agentskills.io) compatible skill for managing [iflow](https://iflow.cn) knowledge bases through AI agents.
 
@@ -20,11 +20,11 @@ This skill follows the open [Agent Skills](https://agentskills.io) standard and 
 
 | Agent | Install Method |
 |-------|---------------|
-| [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | Copy to `~/.claude/skills/iflow-nb/` or `.claude/skills/iflow-nb/` |
-| [OpenClaw](https://github.com/openclaw/openclaw) | `npx clawhub@latest install iflow-nb` |
-| [Devin](https://devin.ai) | Commit to `.agents/skills/iflow-nb/` in your repo |
-| [Windsurf](https://windsurf.com) | Copy to `.windsurf/skills/iflow-nb/` |
-| [CrewAI](https://www.crewai.com) | `skills=["./iflow-nb"]` |
+| [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | Copy to `~/.claude/skills/happy-notes/` or `.claude/skills/happy-notes/` |
+| [OpenClaw](https://github.com/openclaw/openclaw) | `npx clawhub@latest install happy-notes` |
+| [Devin](https://devin.ai) | Commit to `.agents/skills/happy-notes/` in your repo |
+| [Windsurf](https://windsurf.com) | Copy to `.windsurf/skills/happy-notes/` |
+| [CrewAI](https://www.crewai.com) | `skills=["./happy-notes"]` |
 
 > For any agent that supports the Agent Skills standard, simply place this skill directory under the agent's skill discovery path.
 
@@ -40,7 +40,7 @@ Choose one of the following methods:
 
 ```bash
 # Option A - Config file (recommended)
-mkdir -p ~/.config/iflow-nb && echo "your_api_key" > ~/.config/iflow-nb/api-key
+mkdir -p ~/.config/happy-notes && echo "your_api_key" > ~/.config/happy-notes/api-key
 
 # Option B - Environment variable
 export IFLOW_API_KEY="your_api_key"
@@ -51,7 +51,7 @@ The skill resolves credentials in order: environment variable > config file.
 ## Project Structure
 
 ```
-iflow-nb/
+happy-notes/
 ├── SKILL.md                  # Main skill definition (entry point)
 ├── knowledge-base/
 │   └── SKILL.md              # Knowledge base & file management APIs
