@@ -178,6 +178,11 @@ def upload_file(collection_id, filepath):
         log(f"文件不存在: {filepath}")
         return None
     ft = get_file_type(filepath)
+    if ft is None:
+        ext = Path(filepath).suffix.lower()
+        allowed = ", ".join(sorted(ALLOWED_EXTENSIONS))
+        log(f"不支持的文件格式 '{ext}'，支持的格式: {allowed}")
+        return None
     log(f"上传: {os.path.basename(filepath)} ({ft})")
     resp = api_upload(collection_id, file_path=filepath, file_type=ft)
     cid = extract_content_id(resp)
@@ -262,12 +267,14 @@ def create_kb(name, description=None):
 
 EXT_MAP = {
     ".pdf": "PDF", ".txt": "TXT", ".md": "MARKDOWN",
-    ".docx": "DOCX", ".png": "PNG", ".jpg": "JPG", ".jpeg": "JPG",
+    ".docx": "DOCX", ".doc": "DOC", ".png": "PNG", ".jpg": "JPG", ".jpeg": "JPG",
 }
+
+ALLOWED_EXTENSIONS = set(EXT_MAP.keys())
 
 def get_file_type(filepath):
     ext = Path(filepath).suffix.lower()
-    return EXT_MAP.get(ext, "PDF")
+    return EXT_MAP.get(ext)
 
 
 # ─── 参数校验 ────────────────────────────────────────────
@@ -295,7 +302,7 @@ def validate_preset(preset, output_type):
         sys.exit(1)
 
 def validate_files(file_paths):
-    """校验文件路径列表，返回存在的路径。不存在的文件输出警告。"""
+    """校验文件路径列表，返回存在且格式支持的路径。"""
     valid = []
     for fp in file_paths:
         fp = fp.strip()
@@ -303,6 +310,10 @@ def validate_files(file_paths):
             continue
         if not os.path.isfile(fp):
             log(f"文件不存在: {fp}")
+        elif Path(fp).suffix.lower() not in ALLOWED_EXTENSIONS:
+            ext = Path(fp).suffix.lower()
+            allowed = ", ".join(sorted(ALLOWED_EXTENSIONS))
+            log(f"不支持的文件格式 '{ext}': {fp}，支持的格式: {allowed}")
         else:
             valid.append(fp)
     if not valid and file_paths:
