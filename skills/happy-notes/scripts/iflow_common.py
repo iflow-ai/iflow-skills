@@ -279,8 +279,23 @@ def get_file_type(filepath):
 
 # ─── 参数校验 ────────────────────────────────────────────
 
-VALID_OUTPUT_TYPES = {"PDF", "DOCX", "MARKDOWN", "PPT", "XMIND", "PODCAST", "VIDEO"}
+VALID_OUTPUT_TYPES = {
+    # v1（原有 7 种）
+    "PDF", "DOCX", "MARKDOWN", "PPT", "XMIND", "PODCAST", "VIDEO",
+    # v2 新增（与 iflow-notebook ReportFormat enum 对齐；XMIND 已存在对应 iflow-notebook `json`）
+    "HHVIDEO",     # AI 视频（T2V / I2V / Seed），含 videoConfig 子对象
+    "QUIZ",        # 多选题
+    "GRAPH",       # 信息图
+    "TRANSLATION", # 文件翻译（10 种语言互译）
+    "PPT_EDIT",    # PPT 增量编辑（依赖前序 PPT 上下文）
+}
 VALID_PRESETS = {"商务", "卡通"}
+
+# HHVIDEO 专属：videoConfig 字段取值
+VALID_VIDEO_RATIOS = {"16:9", "9:16", "1:1"}
+VALID_VIDEO_IMAGE_TYPES = {"reference", "first_frame"}
+VALID_VIDEO_RESOLUTIONS = {"720p", "1080p"}
+VALID_VIDEO_DURATIONS = {5, 10, 15}
 
 def validate_output_type(t):
     """校验 output-type 参数，返回标准化的大写值。无效时 sys.exit(1)。"""
@@ -300,6 +315,50 @@ def validate_preset(preset, output_type):
     if preset not in VALID_PRESETS:
         log(f"无效的 PPT 风格 '{preset}'，支持: {', '.join(sorted(VALID_PRESETS))}")
         sys.exit(1)
+
+
+def build_video_config(images=None, ratio="16:9", image_type="reference",
+                       resolution="720p", duration=5):
+    """组装 HHVIDEO 的 videoConfig 子对象。仅在 output_type=HHVIDEO 时使用。
+
+    三种模式（按 images + image_type 组合）：
+      - T2V 文生视频:  images=[]            → 只生效 ratio / resolution / duration（imageType 字段不发送）
+      - I2V 参考帧:    images=[...], image_type="reference"  → 生效 resolution / duration（百炼链路，ratio 忽略）
+      - Seed 首帧:     images=[...], image_type="first_frame" → resolution / duration 忽略（Seed 链路）
+
+    校验规则：
+      - image_type="first_frame" 时 images 必须非空（Seed 模式必须有首帧图）
+      - images 为空（T2V）时返回的 dict 不含 imageType 字段（按 v2 文档：imageType 仅 images 非空时生效）
+    """
+    images = images or []
+    if ratio not in VALID_VIDEO_RATIOS:
+        log(f"无效的 video ratio '{ratio}'，支持: {', '.join(sorted(VALID_VIDEO_RATIOS))}")
+        sys.exit(1)
+    if image_type not in VALID_VIDEO_IMAGE_TYPES:
+        log(f"无效的 video imageType '{image_type}'，支持: {', '.join(sorted(VALID_VIDEO_IMAGE_TYPES))}")
+        sys.exit(1)
+    if resolution not in VALID_VIDEO_RESOLUTIONS:
+        log(f"无效的 video resolution '{resolution}'，支持: {', '.join(sorted(VALID_VIDEO_RESOLUTIONS))}")
+        sys.exit(1)
+    if duration not in VALID_VIDEO_DURATIONS:
+        log(f"无效的 video duration {duration}，支持: {sorted(VALID_VIDEO_DURATIONS)}")
+        sys.exit(1)
+
+    # 关键业务校验：Seed 模式必须有首帧图
+    if image_type == "first_frame" and not images:
+        log(f"video image_type='first_frame'（Seed 首帧模式）必须传至少 1 张图片到 images")
+        sys.exit(1)
+
+    config = {
+        "images": images,
+        "ratio": ratio,
+        "resolution": resolution,
+        "duration": duration,
+    }
+    # imageType 字段仅 images 非空时发送（v2 文档：仅 images 非空时生效）
+    if images:
+        config["imageType"] = image_type
+    return config
 
 def validate_files(file_paths):
     """校验文件路径列表，返回存在且格式支持的路径。"""
@@ -381,8 +440,12 @@ def poll_parsing(collection_id, content_ids, max_wait=300, interval=5):
 
 # ─── 提交创作任务 ────────────────────────────────────────
 
-def submit_creation(collection_id, output_type="PDF", query=None, preset=None, files=None):
-    """提交创作任务。搜索+创作接口共享限流：20 次/分钟，超限返回 500，自动重试。"""
+def submit_creation(collection_id, output_type="PDF", query=None, preset=None,
+                    files=None, video_config=None):
+    """提交创作任务。搜索+创作接口共享限流：20 次/分钟，超限返回 500，自动重试。
+
+    video_config: 仅 output_type=HHVIDEO 时透传，通过 build_video_config() 组装。
+    """
     body = {"collectionId": collection_id, "type": output_type}
     if query:
         body["query"] = query
@@ -390,6 +453,8 @@ def submit_creation(collection_id, output_type="PDF", query=None, preset=None, f
         body["preset"] = preset
     if files:
         body["files"] = files
+    if video_config:
+        body["videoConfig"] = video_config
     for attempt in range(1, 4):
         resp = api_post("/api/v1/knowledge/creationTask", body)
         creation_id = resp.get("data")
