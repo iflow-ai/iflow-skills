@@ -117,6 +117,11 @@ Agent 按优先级尝试：环境变量 → 配置文件。Pipeline 脚本内部
 | 重试解析失败的文件 | `pipeline_file_management.py` `retry` | `--kb` `--file` |
 | **内容生成（单独生成，不含搜索/导入）** | | |
 | "帮我做个PPT" / "生成一份报告" | `pipeline_generate.py` | `--kb` `--output-type` `--query` `--preset` |
+| "做个 AI 视频" / "生成短视频" | `pipeline_generate.py` | `--kb` `--output-type HHVIDEO` `--query` `--video-*`（详见脚本 --help） |
+| "出几道题" / "做个测验" / "考考我" | `pipeline_generate.py` | `--kb` `--output-type QUIZ` `--query`（题量/难度写进 query） |
+| "做张信息图" / "数据可视化" | `pipeline_generate.py` | `--kb` `--output-type GRAPH` `--query`（风格/尺寸写进 query） |
+| "翻译这个文档" / "中译英" | `pipeline_generate.py` | `--kb` `--output-type TRANSLATION` `--query`（源/目标语言写进 query） |
+| "修改这页 PPT" / "重做第 N 页" | `pipeline_generate.py` | `--kb` `--output-type PPT_EDIT` `--query`（需要前序 PPT 上下文） |
 | "查看生成进度" / "做好了吗" | `pipeline_check_status.py` | `--kb` [--creation-id] |
 | **搜索管理** | | |
 | 停止正在进行的搜索 | `pipeline_web_search.py` `--stop` | `--kb` `--stop` |
@@ -221,6 +226,7 @@ Agent 按优先级尝试：环境变量 → 配置文件。Pipeline 脚本内部
 | 对生成任务循环轮询状态 | 提交后告知用户预计时间，用户主动问时才查一次 |
 | 用 `curl`/`iflow_api` 直接拼 HTTP 请求调 API（如 `creationList`、`shareNotebook` 等） | **必须使用 Pipeline 脚本**。Pipeline 已封装凭证、参数校验、轮询、错误重试。直接调 API 容易出错且不稳定。所有 20 个 API 端点均已有 Pipeline 覆盖，不存在"需要直接调 API"的场景 |
 | Pipeline 输出有 `failedCount` 但 Agent 不告知用户 | 检查 Pipeline 输出 JSON 中的 `failedCount`/`failedItems`/`importFailedCount` 字段，**如有失败必须告知用户**（如"3 个文件已导入，1 个失败：bad.exe 格式不支持"） |
+| 简化用户 query 丢失维度信息（如把"做个 10 分钟的女声轻松播客"简化成"做个播客"）| **完整保留用户提到的所有修饰维度**（时长 / 音色 / 主持人数 / 难度 / 题量 / 风格 / 字数 / 语言 / 调性 / 视觉风格 / 目标语言 等）。除 type / preset / HHVIDEO 的 videoConfig 是显式参数外，**其它所有维度都靠 query 文本透传给下游 LLM 推断**——丢信息 = 丢能力。详见 `reports/SKILL.md` 的「query 内容传达指引」 |
 
 ### 错误处理
 
