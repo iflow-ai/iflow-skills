@@ -52,8 +52,9 @@ def main():
     parser.add_argument("--video-image-type", default="reference",
                         choices=["reference", "first_frame"],
                         help="HHVIDEO 图片用途：reference=百炼 I2V / first_frame=Seed")
-    parser.add_argument("--video-resolution", default="720p", choices=["720p", "1080p"],
-                        help="HHVIDEO 分辨率，默认 720p，Seed 模式忽略")
+    parser.add_argument("--video-resolution", default="720P",
+                        choices=["720P", "1080P", "720p", "1080p"],
+                        help="HHVIDEO 分辨率，默认 720P（百炼要求大写，小写会自动转）")
     parser.add_argument("--video-duration", type=int, default=5, choices=[5, 10, 15],
                         help="HHVIDEO 时长（秒），默认 5，Seed 模式忽略")
 

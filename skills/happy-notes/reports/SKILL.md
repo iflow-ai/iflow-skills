@@ -129,10 +129,10 @@ python3 scripts/pipeline_check_status.py --kb "知识库名称"
 
 | 字段 | 类型 | 默认 | 说明 |
 |------|------|------|------|
-| `images` | List\<String\> | `[]` | 参考图片 CDN URL 列表；空 = T2V 文生视频 |
+| `images` | List\<String\> | `[]` | 参考图片 CDN URL 列表；空 = T2V 文生视频。**图片尺寸必须 ≥ 300×300**（百炼模型校验），否则 I2V/Seed 任务会失败 |
 | `ratio` | string | `"16:9"` | 视频宽高比：`16:9` / `9:16` / `1:1`，仅 T2V 生效 |
 | `imageType` | string | `"reference"` | `reference`（百炼 I2V）/ `first_frame`（Seed） |
-| `resolution` | string | `"720p"` | 分辨率：`720p` / `1080p`，Seed 模式忽略 |
+| `resolution` | string | `"720P"` | 分辨率：`"720P"` / `"1080P"`（**必须大写**，百炼校验严格；skill 内部会自动 .upper() 容错），Seed 模式忽略 |
 | `duration` | int | `5` | 时长（秒）：`5` / `10` / `15`，Seed 模式忽略 |
 
 ## 内容生成工作流

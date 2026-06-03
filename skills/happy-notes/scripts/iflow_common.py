@@ -292,9 +292,11 @@ VALID_OUTPUT_TYPES = {
 VALID_PRESETS = {"商务", "卡通"}
 
 # HHVIDEO 专属：videoConfig 字段取值
+# ⚠️ resolution 必须大写：百炼 happyhorse-1.0-t2v 模型校验严格只接受 "720P" / "1080P"
+#    （传 "720p" 小写会被百炼直接拒绝 InvalidParameter，已实测验证）
 VALID_VIDEO_RATIOS = {"16:9", "9:16", "1:1"}
 VALID_VIDEO_IMAGE_TYPES = {"reference", "first_frame"}
-VALID_VIDEO_RESOLUTIONS = {"720p", "1080p"}
+VALID_VIDEO_RESOLUTIONS = {"720P", "1080P"}
 VALID_VIDEO_DURATIONS = {5, 10, 15}
 
 def validate_output_type(t):
@@ -318,7 +320,7 @@ def validate_preset(preset, output_type):
 
 
 def build_video_config(images=None, ratio="16:9", image_type="reference",
-                       resolution="720p", duration=5):
+                       resolution="720P", duration=5):
     """组装 HHVIDEO 的 videoConfig 子对象。仅在 output_type=HHVIDEO 时使用。
 
     三种模式（按 images + image_type 组合）：
@@ -331,6 +333,11 @@ def build_video_config(images=None, ratio="16:9", image_type="reference",
       - images 为空（T2V）时返回的 dict 不含 imageType 字段（按 v2 文档：imageType 仅 images 非空时生效）
     """
     images = images or []
+    # 容错：用户/Agent 传了小写 resolution（如 "720p"）自动转大写
+    # 百炼 happyhorse-1.0-t2v 模型校验严格，只接受 "720P"/"1080P"
+    if isinstance(resolution, str):
+        resolution = resolution.upper()
+
     if ratio not in VALID_VIDEO_RATIOS:
         log(f"无效的 video ratio '{ratio}'，支持: {', '.join(sorted(VALID_VIDEO_RATIOS))}")
         sys.exit(1)
