@@ -79,7 +79,7 @@ def main():
             resolution=args.video_resolution,
             duration=args.video_duration,
         )
-    elif args.video_images or args.video_image_type != "reference" or args.video_ratio != "16:9" or args.video_resolution != "720p" or args.video_duration != 5:
+    elif args.video_images or args.video_image_type != "reference" or args.video_ratio != "16:9" or args.video_resolution.upper() != "720P" or args.video_duration != 5:
         log("警告: --video-* 参数仅在 --output-type HHVIDEO 时生效，当前已忽略")
 
     kb_id = find_kb(args.kb or None, args.kb_id or None)

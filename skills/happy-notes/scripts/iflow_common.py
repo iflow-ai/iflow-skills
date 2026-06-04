@@ -452,7 +452,29 @@ def submit_creation(collection_id, output_type="PDF", query=None, preset=None,
     """提交创作任务。搜索+创作接口共享限流：20 次/分钟，超限返回 500，自动重试。
 
     video_config: 仅 output_type=HHVIDEO 时透传，通过 build_video_config() 组装。
+    files: 参考文件列表 [{"contentId": "..."}, ...]
+        ⚠️ 后端实测此字段必填——v2 文档说"不传则用全部文件"但实际不传会返回
+        500「哎呀，出了点小问题」。本函数自动 fallback：files 为空时，自动
+        调 pageQueryContents 拉全部 status=success 的 contentId 注入。
     """
+    # files 自动注入：v2 文档说此字段可选但实测必填，自动拉全部已就绪文件
+    if not files:
+        log("files 字段未指定，自动拉知识库全部已就绪文件...")
+        resp = api_post(
+            f"/api/v1/knowledge/pageQueryContents?collectionId={collection_id}"
+            f"&pageNum=1&pageSize=500"
+        )
+        items = resp.get("data") or []
+        files = [
+            {"contentId": it["contentId"]}
+            for it in items
+            if it.get("status") == "success" and it.get("contentId")
+        ]
+        if not files:
+            log(f"错误: 知识库 {collection_id} 内无 status=success 的文件，无法提交创作任务")
+            return None
+        log(f"自动注入 {len(files)} 个已就绪文件到 files 字段")
+
     body = {"collectionId": collection_id, "type": output_type}
     if query:
         body["query"] = query
