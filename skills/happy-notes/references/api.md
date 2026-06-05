@@ -359,9 +359,10 @@ Content-Type: `multipart/form-data`
 |------|------|------|------|
 | `collectionId` | string | 是 | 知识库 ID |
 | `type` | string | 是 | 创作类型（见下表） |
-| `query` | string | 否 | 创作要求，不传则系统自动规划 |
+| `query` | string | 否 | 创作要求，不传则系统自动规划。**所有非显式参数维度（时长/音色/难度/风格/字数/语言等）都通过 query 文本透传给下游 LLM** |
 | `files` | array | 否 | 参考文件列表，不传则使用知识库全部文件 |
 | `preset` | string | 否 | PPT 风格：`"商务"` / `"卡通"`（仅 type=PPT 时使用） |
+| `videoConfig` | object | 否 | HHVIDEO 视频生成配置（仅 type=HHVIDEO 时使用，详见下表） |
 
 **type 取值:**
 
@@ -369,11 +370,26 @@ Content-Type: `multipart/form-data`
 |---------|------|---------|
 | `PDF` | 生成 PDF 报告 | 10-20 分钟 |
 | `DOCX` | 生成 Word 报告 | 10-20 分钟 |
-| `MARKDOWN` | 生成 Markdown 报告 | 10-20 分钟 |
+| `MARKDOWN` | 生成 Markdown 报告（支持 7 种类型变体：深度研究/文献综述/审稿/高管简报/学习指南/博客/自定义结构，由 query 推断） | 10-20 分钟 |
 | `PPT` | 生成演示文稿（可选 preset） | 15-30 分钟 |
 | `XMIND` | 生成思维导图 | 15-30 分钟 |
-| `PODCAST` | 生成播客 | 10-20 分钟 |
-| `VIDEO` | 生成视频 | 15-30 分钟 |
+| `PODCAST` | 生成播客（支持时长 3-30 分钟 / 单双口 / 10 种音色 / 调性，由 query 推断） | 10-20 分钟 |
+| `VIDEO` | 生成视频（有声 PPT 讲解，TTS 旁白 + PPT 页面） | 15-30 分钟 |
+| `HHVIDEO` | **v2 新增**：生成 AI 视频（T2V / I2V / Seed 三种模式，通过 videoConfig 配置） | 5-15 分钟 |
+| `QUIZ` | **v2 新增**：生成多选题数组（题量/难度/语言由 query 推断） | 5-10 分钟 |
+| `GRAPH` | **v2 新增**：生成单张信息图（风格 minimal/cartoon/cool + 尺寸方/横/竖，由 query 推断） | 5-10 分钟 |
+| `TRANSLATION` | **v2 新增**：文件翻译（PDF/DOCX/MD/TXT 互译，10 种语言；源/目标语言由 query 推断） | 5-20 分钟 |
+| `PPT_EDIT` | **v2 新增**：PPT 增量编辑（依赖前序 PPT 上下文） | 10-20 分钟 |
+
+**`videoConfig` 子字段（仅 `type=HHVIDEO` 使用）：**
+
+| 字段 | 类型 | 默认 | 说明 |
+|------|------|------|------|
+| `images` | List\<String\> | `[]` | 参考图片 CDN URL 列表；空 = T2V 文生视频。**图片尺寸必须 ≥ 300×300**，否则 I2V/Seed 任务会失败 |
+| `ratio` | string | `"16:9"` | 视频宽高比：`16:9` / `9:16` / `1:1`，仅 T2V 生效 |
+| `imageType` | string | `"reference"` | `reference`（百炼 I2V）/ `first_frame`（Seed） |
+| `resolution` | string | `"720P"` | 分辨率：`"720P"` / `"1080P"`（**必须大写**，百炼模型校验严格），Seed 模式忽略 |
+| `duration` | int | `5` | 时长（秒）：`5` / `10` / `15`，Seed 模式忽略 |
 
 返回: `{"success": true, "code": "200", "data": "creation_id"}`
 

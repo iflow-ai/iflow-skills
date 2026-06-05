@@ -1,6 +1,6 @@
 ---
 name: happy-notes-reports
-description: 内容生成子技能，支持 PDF/DOCX/MARKDOWN/PPT/XMIND/PODCAST/VIDEO 七种产出类型的创建、状态查询和进度展示。
+description: 内容生成子技能，支持 PDF/DOCX/MARKDOWN/PPT/XMIND/PODCAST/VIDEO/HHVIDEO/QUIZ/GRAPH/TRANSLATION/PPT_EDIT 十二种产出类型的创建、状态查询和进度展示。
 ---
 
 # Reports (内容生成)
@@ -11,19 +11,26 @@ description: 内容生成子技能，支持 PDF/DOCX/MARKDOWN/PPT/XMIND/PODCAST/
 
 完整数据结构和接口参数详见 `references/api.md`。
 
-## 七种产出类型
+## 十二种产出类型
 
 | type 值 | 产出类型 | 说明 | 预估耗时 | 等待策略 |
 |---------|---------|------|---------|---------|
 | `PDF` | PDF 报告 | 生成 PDF 格式报告 | 10-20分钟 | 异步，不阻塞 |
 | `DOCX` | Word 报告 | 生成 Word 格式报告 | 10-20分钟 | 异步，不阻塞 |
-| `MARKDOWN` | Markdown 报告 | 生成 Markdown 格式报告 | 10-20分钟 | 异步，不阻塞 |
+| `MARKDOWN` | Markdown 报告 | 生成 Markdown 格式报告（支持 7 种类型变体，见「query 内容传达指引」） | 10-20分钟 | 异步，不阻塞 |
 | `PPT` | 演示文稿 | 支持 `preset`：`"商务"` / `"卡通"` | 15-30分钟 | 异步，不阻塞 |
 | `XMIND` | 思维导图 | — | 15-30分钟 | 异步，不阻塞 |
-| `PODCAST` | 播客 | — | 10-20分钟 | 异步，不阻塞 |
-| `VIDEO` | 视频 | — | 15-30分钟 | 异步，不阻塞 |
+| `PODCAST` | 播客 | 支持时长（3-30 分钟）、单/双口、10 种音色、调性（由 query 描述，LLM 自动推断） | 10-20分钟 | 异步，不阻塞 |
+| `VIDEO` | 视频（有声 PPT 讲解） | TTS 旁白 + PPT 页面演示 | 15-30分钟 | 异步，不阻塞 |
+| `HHVIDEO` | AI 视频（**v2 新增**） | 支持 T2V / I2V / Seed 三种模式，通过 `videoConfig` 显式配置 | 5-15分钟 | 异步，不阻塞 |
+| `QUIZ` | 多选题（**v2 新增**） | 自动生成 N 道题，含 4 选项 + 正确答案 + 解释；题量/难度由 query 描述 | 5-10分钟 | 异步，不阻塞 |
+| `GRAPH` | 信息图（**v2 新增**） | 单张数据可视化图；风格（minimal/cartoon/cool）+ 尺寸（方/横/竖）由 query 描述 | 5-10分钟 | 异步，不阻塞 |
+| `TRANSLATION` | 文件翻译（**v2 新增**） | 支持 PDF/DOCX/MD/TXT 互译，10 种语言；源/目标语言由 query 描述 | 5-20分钟 | 异步，不阻塞 |
+| `PPT_EDIT` | PPT 增量编辑（**v2 新增**） | 基于已有 PPT + 用户编辑指令做修改；**依赖前序 PPT 上下文** | 10-20分钟 | 异步，不阻塞 |
 
 > **注意**: `PDF`/`DOCX`/`MARKDOWN` 都是报告的不同输出格式。用户没指定格式时默认使用 `PDF`。
+>
+> **`VIDEO` vs `HHVIDEO`**：`VIDEO` 是 TTS 旁白 + PPT 页面演示（"有声 PPT"）；`HHVIDEO` 是真正的 AI 视频生成。用户说"做个视频"时倾向于 `HHVIDEO`；说"配音演示"、"讲解视频"时用 `VIDEO`。
 
 ## 意图识别与参数映射
 
@@ -32,17 +39,51 @@ description: 内容生成子技能，支持 PDF/DOCX/MARKDOWN/PPT/XMIND/PODCAST/
 | "生成报告"/"写份报告" | `PDF` | — | 未指定格式时默认 PDF |
 | "导出 Word" | `DOCX` | — | — |
 | "生成 Markdown 报告" | `MARKDOWN` | — | — |
-| "写篇博客" | `MARKDOWN` | — | 博客 = Markdown 格式报告，通过 query 描述博客风格 |
+| "写篇博客"/"做篇公众号文章" | `MARKDOWN` | — | 通过 query 完整传达"博客/公众号"等关键词，下游 LLM 会识别为 `blog_article` 类型 |
+| "深度研究"/"调研报告" | `MARKDOWN` | — | 下游识别为 `deep_research` 类型 |
+| "文献综述"/"文献回顾" | `MARKDOWN` | — | 下游识别为 `literature_review` 类型 |
+| "审稿意见"/"论文 review" | `MARKDOWN` | — | 下游识别为 `shadow_review` 类型 |
+| "高管简报"/"执行摘要"/"给老板看的总结" | `MARKDOWN` | — | 下游识别为 `executive_summary` 类型 |
+| "学习指南"/"教学材料"/"考点整理" | `MARKDOWN` | — | 下游识别为 `study_guide` 类型 |
+| "按 SWOT 写"/"分 5 段" | `MARKDOWN` | — | 下游识别为 `custom_format` 自定义结构 |
 | "做个PPT"/"生成演示文稿" | `PPT` | `"商务"` | 默认商务风格 |
 | "做个活泼的PPT"/"卡通风格" | `PPT` | `"卡通"` | 关键词触发 |
-| "生成播客"/"做个播客" | `PODCAST` | — | — |
+| "生成播客"/"做个播客" | `PODCAST` | — | 用户提到的时长/音色/单双口/调性需**完整保留在 query** |
+| "做个 10 分钟的女声轻松风格播客" | `PODCAST` | — | query 必须包含"10 分钟""女声""轻松"，不能简化 |
 | "生成思维导图"/"画个脑图" | `XMIND` | — | — |
-| "生成视频"/"做个视频" | `VIDEO` | — | — |
+| "生成视频"/"做个视频" | `HHVIDEO` | — | **默认走 HHVIDEO**（AI 视频）；如果用户明确说"讲解视频/配音演示"才用 `VIDEO` |
+| "做个 AI 视频"/"生成短视频" | `HHVIDEO` | — | 默认 T2V 文生视频，传 `--video-images` 切 I2V/Seed |
+| "用这几张图生成视频" | `HHVIDEO` | — | 传 `--video-images --video-image-type reference`（I2V） |
+| "用这张图作为开头做视频" | `HHVIDEO` | — | 传 `--video-images --video-image-type first_frame`（Seed） |
+| "出几道题"/"做个测验"/"考考我" | `QUIZ` | — | 用户说的题量/难度（"10 道"/"难一点"）**必须完整传到 query** |
+| "做张信息图"/"数据可视化" | `GRAPH` | — | 用户说的风格（卡通/极简/酷炫）和尺寸（方/横/竖）**必须完整传到 query** |
+| "翻译这个文档"/"译成英文"/"中译英" | `TRANSLATION` | — | 用户说的源/目标语言**必须完整传到 query** |
+| "修改这页 PPT"/"重做第 N 页" | `PPT_EDIT` | — | **依赖前序 PPT 上下文**，需要 Agent 知道当前会话已经生成过 PPT |
 | "同时生成报告和PPT" | 多个 | — | 并行提交 |
 | "帮我总结一下" | `PDF` | — | 总结 = 报告，通过 query 描述总结要求 |
 | "对比分析这两篇论文" | `PDF` | — | 通过 query 传达分析要求 |
 
 > **PPT 风格引导**：用户要求生成 PPT 但未指定风格时，Agent 应主动询问：「PPT 有**商务**和**卡通**两种风格，您想用哪种？默认使用商务风格。」用户说"随便"或不选择时使用商务。
+
+## query 内容传达指引（⚠️ 重要）
+
+iflow-notebook 内部会从 user_query 文本中通过 LLM 推断各种创作维度配置（时长 / 音色 / 难度 / 风格 / 字数 / 语言 / 调性等），**接口层只接受 type 字符串 + query 文本，没有这些维度的显式参数**（HHVIDEO 的 videoConfig 是唯一例外）。
+
+**这意味着：Agent 不能简化 query 丢失用户信息**，否则下游 LLM 推断时拿不到完整信息，输出质量下降。
+
+| 类型 | 用户说到这些信息时必须完整保留在 query | 反例（❌ 错误简化） | 正例（✅ 完整保留） |
+|---|---|---|---|
+| **MARKDOWN** | 类型变体（"深度研究"/"文献综述"/"审稿"/"高管简报"/"学习指南"/"博客"/"SWOT/PEST/MECE 等结构"）；字数（"2 万字"）；语言（"英文"）；调性（"犀利"/"专业"/"通俗"） | "给我写一份关于 X 的文献综述，2 万字，专业语气" → query 写成"写报告" | "给我写一份关于 X 的**文献综述**，**2 万字**，**专业语气**" |
+| **PODCAST** | 时长（"10 分钟"/"30 分钟"）；主持人数（"单口"/"对谈"）；音色（"女声"/"男声"/"温暖"）；调性（"轻松"/"严肃"/"科普"）；语言 | "做个 15 分钟的女声轻松播客" → query 写成"做个播客" | "做个 **15 分钟**的**女声轻松风格**播客" |
+| **QUIZ** | 题量（"10 道"/"20 道"）；难度（"简单"/"中等"/"困难"）；语言 | "出 20 道难题考考我" → query 写成"出题" | "出 **20 道难题**考考我" |
+| **GRAPH** | 风格（"极简"/"卡通"/"酷炫"）；尺寸（"方图"/"横版"/"竖版"） | "做张卡通风格的竖版信息图" → query 写成"做张信息图" | "做张**卡通风格**的**竖版**信息图" |
+| **TRANSLATION** | 源语言 + 目标语言（"中译英"/"翻成日语"） | "把这个文件翻成日语" → query 写成"翻译" | "把这个文件**翻成日语**" |
+| **PPT** | 除 preset 外的字数（"做 20 页"）、语言（"英文 PPT"） | "做个 20 页英文 PPT" → query 写成"做 PPT" | "做个 **20 页英文** PPT" |
+| 其它 | 任何用户主动提到的风格 / 字数 / 语言 / 调性 / 偏好 | 不要因为"觉得不必要"而省略 | — |
+
+> **核心原则**：除 `--output-type` 这类必须映射到 type 字符串的关键词外，**用户提到的所有其它修饰信息全部原样塞到 `--query` 里**。query 写得越完整，下游 LLM 推断越准。
+>
+> **HHVIDEO 例外**：HHVIDEO 有专属的 `--video-ratio`/`--video-resolution`/`--video-duration`/`--video-images`/`--video-image-type` 参数，这些维度走显式 videoConfig 子对象传递，**不需要写在 query 里**。其它类型的所有维度都靠 query。
 
 ## 推荐方式
 
@@ -72,16 +113,27 @@ python3 scripts/pipeline_check_status.py --kb "知识库名称"
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | `collectionId` | string | 是 | 知识库 ID |
-| `type` | string | 是 | 创作类型：`PDF`/`DOCX`/`MARKDOWN`/`PPT`/`XMIND`/`PODCAST`/`VIDEO` |
-| `query` | string | 否 | 用户对产出的自定义要求。不传则系统自动规划 |
+| `type` | string | 是 | 创作类型：`PDF`/`DOCX`/`MARKDOWN`/`PPT`/`XMIND`/`PODCAST`/`VIDEO`/`HHVIDEO`/`QUIZ`/`GRAPH`/`TRANSLATION`/`PPT_EDIT` |
+| `query` | string | 否 | 用户对产出的自定义要求。不传则系统自动规划。**所有非显式参数维度（时长/音色/难度/风格/字数/语言等）都通过 query 文本透传给下游 LLM** |
 | `files` | array | 否 | 参考文件列表。**不传则使用知识库全部文件** |
 | `preset` | string | 否 | PPT 风格：`"商务"` / `"卡通"`。仅 `type=PPT` 时有效 |
+| `videoConfig` | object | 否 | HHVIDEO 视频生成配置。仅 `type=HHVIDEO` 时有效，详见下表 |
 
 `files` 数组中每个元素：
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `contentId` | string | 文件的 contentId（来自 `upload` 返回的 `data.contentId`，或 `pageQueryContents` 返回的文件记录中的 `contentId` 字段） |
+
+`videoConfig` 子字段（仅 `type=HHVIDEO` 使用）：
+
+| 字段 | 类型 | 默认 | 说明 |
+|------|------|------|------|
+| `images` | List\<String\> | `[]` | 参考图片 CDN URL 列表；空 = T2V 文生视频。**图片尺寸必须 ≥ 300×300**（百炼模型校验），否则 I2V/Seed 任务会失败 |
+| `ratio` | string | `"16:9"` | 视频宽高比：`16:9` / `9:16` / `1:1`，仅 T2V 生效 |
+| `imageType` | string | `"reference"` | `reference`（百炼 I2V）/ `first_frame`（Seed） |
+| `resolution` | string | `"720P"` | 分辨率：`"720P"` / `"1080P"`（**必须大写**，百炼校验严格；skill 内部会自动 .upper() 容错），Seed 模式忽略 |
+| `duration` | int | `5` | 时长（秒）：`5` / `10` / `15`，Seed 模式忽略 |
 
 ## 内容生成工作流
 
