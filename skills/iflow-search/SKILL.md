@@ -1,7 +1,6 @@
 ---
 name: iflow-search-skill
 description: 联网搜索技能，支持网页搜索、图片搜索和网页内容抓取。当用户需要搜索网络信息、查找图片、获取网页内容时自动调用。
-license: Proprietary. LICENSE.txt has complete terms
 ---
 
 # 心流搜索 Skill
